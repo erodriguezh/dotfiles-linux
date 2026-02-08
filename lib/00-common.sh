@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # lib/00-common.sh — Shared constants, functions, and stage registry
-# Sourced by install.sh. Constants and arrays at top level; no side effects.
+# Sourced by install.sh. Constants and registry arrays initialized at top level;
+# no top-level actions beyond constant/registry initialization.
 
 set -Eeuo pipefail
 shopt -s inherit_errexit

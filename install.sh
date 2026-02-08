@@ -17,8 +17,13 @@ shopt -s inherit_errexit
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Source common library first (constants, stages, helpers), then remaining libs
+# shellcheck source=lib/00-common.sh
+source "${SCRIPT_DIR}/lib/00-common.sh"
+
 shopt -s nullglob
 for lib in "${SCRIPT_DIR}"/lib/*.sh; do
+    [[ "$lib" == */00-common.sh ]] && continue
     # shellcheck source=/dev/null
     source "$lib"
 done
@@ -243,8 +248,8 @@ for stage in "${RUN_STAGES[@]}"; do
 
     fn="run_${stage}"
     if ! declare -F "$fn" &>/dev/null; then
-        warn "Stage function '$fn' not found (lib file not yet created). Skipping."
-        continue
+        error "Stage function '$fn' not found. Is lib file for '$stage' missing?"
+        exit 1
     fi
 
     "$fn"
