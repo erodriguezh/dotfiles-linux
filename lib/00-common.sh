@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # lib/00-common.sh — Shared constants, functions, and stage registry
-# Sourced by install.sh; defines functions only, no top-level execution.
+# Sourced by install.sh. Constants and arrays at top level; no side effects.
 
 set -Eeuo pipefail
 shopt -s inherit_errexit
@@ -34,6 +34,8 @@ STAGES=(
 )
 
 # Stage prerequisites — each key lists stages that MUST run before it.
+# Only immediate dependencies; transitive deps are resolved recursively by
+# _collect_prereqs() in install.sh (e.g. dotfiles -> theme -> packages -> repos).
 declare -A STAGE_DEPS=(
     [repos]=""
     [kernel]="repos"
@@ -42,11 +44,11 @@ declare -A STAGE_DEPS=(
     [fonts]="packages"
     [zram]=""
     [network]="fonts"
-    [desktop]=""
-    [theme]=""
+    [desktop]="packages"
+    [theme]="packages"
     [dotfiles]="theme"
     [neovim]="dotfiles"
-    [services]=""
+    [services]="packages"
 )
 
 # ---------------------------------------------------------------------------
@@ -141,7 +143,7 @@ _err_handler() {
 }
 
 _exit_handler() {
-    local code=$?
+    local code="${1:-$?}"
     if [[ $code -ne 0 ]]; then
         error "Script exited with code $code"
         error "Check log: $LOG_FILE"

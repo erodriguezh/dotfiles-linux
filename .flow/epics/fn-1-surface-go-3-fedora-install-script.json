@@ -1,0 +1,18 @@
+{
+  "branch_name": "fn-1-surface-go-3-fedora-install-script",
+  "completion_review_status": "unknown",
+  "completion_reviewed_at": null,
+  "created_at": "2026-02-06T22:47:07.282103Z",
+  "default_impl": null,
+  "default_review": null,
+  "default_sync": null,
+  "depends_on_epics": [],
+  "id": "fn-1-surface-go-3-fedora-install-script",
+  "next_task": 1,
+  "plan_review_status": "ship",
+  "plan_reviewed_at": "2026-02-08T08:58:35.616386Z",
+  "spec_path": ".flow/specs/fn-1-surface-go-3-fedora-install-script.md",
+  "status": "open",
+  "title": "Surface Go 3 Fedora Install Script",
+  "updated_at": "2026-02-08T12:27:47.268674Z"
+}

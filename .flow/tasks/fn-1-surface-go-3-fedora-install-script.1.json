@@ -1,0 +1,14 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-02-06T23:08:51.731097Z",
+  "depends_on": [],
+  "epic": "fn-1-surface-go-3-fedora-install-script",
+  "id": "fn-1-surface-go-3-fedora-install-script.1",
+  "priority": null,
+  "spec_path": ".flow/tasks/fn-1-surface-go-3-fedora-install-script.1.md",
+  "status": "todo",
+  "title": "Core framework: install.sh entry point + lib/00-common.sh + .gitignore",
+  "updated_at": "2026-02-08T08:35:09.796059Z"
+}

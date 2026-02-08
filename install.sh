@@ -17,17 +17,19 @@ shopt -s inherit_errexit
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+shopt -s nullglob
 for lib in "${SCRIPT_DIR}"/lib/*.sh; do
     # shellcheck source=/dev/null
     source "$lib"
 done
+shopt -u nullglob
 
 # ---------------------------------------------------------------------------
 # Traps
 # ---------------------------------------------------------------------------
 
-trap '_err_handler "${LINENO}" "${BASH_COMMAND}" "$?"' ERR
-trap '_exit_handler' EXIT
+trap '_err_handler "${BASH_LINENO[0]:-$LINENO}" "${BASH_COMMAND}" "$?"' ERR
+trap '_exit_handler $?' EXIT
 
 # ---------------------------------------------------------------------------
 # Logging — tee stdout+stderr to log file
@@ -120,6 +122,11 @@ fi
 # Validate --only / --skip targets
 # ---------------------------------------------------------------------------
 
+if [[ -n "$ONLY_STAGE" ]] && [[ ${#SKIP_STAGES[@]} -gt 0 ]]; then
+    error "--only and --skip cannot be combined."
+    exit 1
+fi
+
 if [[ -n "$ONLY_STAGE" ]] && ! stage_exists "$ONLY_STAGE"; then
     error "Unknown stage: $ONLY_STAGE"
     info "Run --list to see available stages."
@@ -197,7 +204,7 @@ sudo -v
 # Keep sudo alive in the background for long-running stages
 (
     while true; do
-        sudo -n true 2>/dev/null
+        sudo -n true 2>/dev/null || true
         sleep 50
     done
 ) &
@@ -211,7 +218,7 @@ _cleanup_sudo_keepalive() {
 }
 
 # Extend exit trap to also clean up the keepalive
-trap '_cleanup_sudo_keepalive; _exit_handler' EXIT
+trap 'rc=$?; _cleanup_sudo_keepalive; _exit_handler "$rc"' EXIT
 
 # ---------------------------------------------------------------------------
 # Run stages
