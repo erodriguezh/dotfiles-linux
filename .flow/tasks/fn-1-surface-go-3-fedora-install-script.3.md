@@ -66,9 +66,8 @@ Create the Kickstart file for automated Fedora 43 Minimal Install on Surface Go 
 - [ ] No deprecated kickstart commands used
 
 ## Done summary
-
-_To be filled after implementation._
-
+Added Kickstart file for automated Fedora 43 Minimal Install on Surface Go 3 eMMC with interactive user creation, SHA-512 password hashing, and repo bootstrap via %post. Created comprehensive README with USB preparation guide (three methods: second USB, Ventoy, HTTP), post-install workflow, stage reference, and Secure Boot guidance.
 ## Evidence
-
-_To be filled after implementation._
+- Commits: 23b9db82f9dd0eb8e0fadd2bfa79d5ea10f08e7d, 83069b29ea962b6e12b5eb19e7b7ef2e4b0e7e3a, 2672d3d2cf6e61e4f9e2e0aed955b4aec4ffd8d5, 4a189f62b4d9b22c1522e9d9a9c29d525715ad4c
+- Tests:
+- PRs:
