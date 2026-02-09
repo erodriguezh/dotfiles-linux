@@ -3,7 +3,8 @@
 Create all static application configuration files for Hyprland 0.53+ (split-by-concern) and companion apps, plus Neovim/LazyVim setup. These are version-controlled config files that reference template-generated color files.
 
 **Size:** M
-**Files:** `config/hypr/hyprland.conf`, `config/hypr/input.conf`, `config/hypr/keybinds.conf`, `config/hypr/windowrules.conf`, `config/hypr/autostart.conf`, `config/hypr/hypridle.conf`, `config/hypr/hyprlock.conf`, `config/hypr/hyprpaper.conf`, `config/waybar/config.jsonc`, `config/waybar/style.css`, `config/mako/config`, `config/ghostty/config`, `config/tofi/config`, `config/nvim/init.lua`, `config/nvim/lua/config/lazy.lua`, `config/nvim/lua/config/options.lua`, `config/nvim/lua/plugins/colorscheme.lua`, `lib/09-neovim.sh`
+<!-- Updated by plan-sync: fn-1...1 added fonts stage at position 5, shifting subsequent lib file numbers by +1 -->
+**Files:** `config/hypr/hyprland.conf`, `config/hypr/input.conf`, `config/hypr/keybinds.conf`, `config/hypr/windowrules.conf`, `config/hypr/autostart.conf`, `config/hypr/hypridle.conf`, `config/hypr/hyprlock.conf`, `config/hypr/hyprpaper.conf`, `config/waybar/config.jsonc`, `config/waybar/style.css`, `config/mako/config`, `config/ghostty/config`, `config/tofi/config`, `config/nvim/init.lua`, `config/nvim/lua/config/lazy.lua`, `config/nvim/lua/config/options.lua`, `config/nvim/lua/plugins/colorscheme.lua`, `lib/10-neovim.sh`
 
 ## Approach
 
@@ -36,12 +37,12 @@ Create all static application configuration files for Hyprland 0.53+ (split-by-c
 - `config/hypr/hyprlock.conf` — Layout with `source = ~/.config/hypr/hyprlock-colors.conf`
 - `config/hypr/hyprpaper.conf` — References `~/.local/share/wallpapers/surface-linux/`
 
-### Neovim (`config/nvim/` + `lib/09-neovim.sh`)
+### Neovim (`config/nvim/` + `lib/10-neovim.sh`)
 
 - LazyVim bootstrap: `init.lua` with lazy.nvim clone from `--branch=stable`
 - `lua/config/lazy.lua`: LazyVim setup
 - `lua/plugins/colorscheme.lua`: Tokyo Night with `priority = 1000`, `lazy = false`, style = "night"
-- `lib/09-neovim.sh` (`run_neovim`):
+- `lib/10-neovim.sh` (`run_neovim`):
   - Check `nvim --version` — if < 0.11.2, warn and pin LazyVim to v14.x compatible branch
   - Clone lazy.nvim to `~/.local/share/nvim/lazy/lazy.nvim` if not present
   - Run headless plugin install: `nvim --headless "+Lazy! sync" +qa`

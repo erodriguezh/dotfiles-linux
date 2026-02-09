@@ -3,24 +3,25 @@
 Create lib scripts for the `zram`, `network`, `desktop`, and `services` install stages. These handle system-level configuration that runs after packages are installed and downloads are complete.
 
 **Size:** M
-**Files:** `lib/05-zram.sh`, `lib/06-network.sh`, `lib/07-desktop.sh`, `lib/11-services.sh`
+<!-- Updated by plan-sync: fn-1...1 added fonts stage at position 5, shifting subsequent lib file numbers by +1 -->
+**Files:** `lib/06-zram.sh`, `lib/07-network.sh`, `lib/08-desktop.sh`, `lib/12-services.sh`
 
 ## Approach
 
-### lib/05-zram.sh (`run_zram`)
+### lib/06-zram.sh (`run_zram`)
 - Write `/etc/systemd/zram-generator.conf` with `zram-size = ram` (4GB → 4GB zram) and `compression-algorithm = zstd` via `sudo tee`
 - Write `/etc/sysctl.d/99-zram.conf` with tuned values via `sudo tee`
 - Idempotent: overwrite files (same content on re-run)
 - Takes effect after reboot only
 
-### lib/06-network.sh (`run_network`)
+### lib/07-network.sh (`run_network`)
 - Create `/etc/NetworkManager/conf.d/wifi-backend.conf` with iwd backend via `sudo tee`
 - Do NOT enable `iwd.service` manually — NetworkManager manages it
 - Run `sudo restorecon -R /etc/NetworkManager` after writing conf.d files (SELinux)
 - Do NOT restart NetworkManager during install (would drop WiFi). Config takes effect after reboot.
 - Print info message: "iwd backend configured. Takes effect after reboot."
 
-### lib/07-desktop.sh (`run_desktop`)
+### lib/08-desktop.sh (`run_desktop`)
 - Getty auto-login override: write systemd drop-in for `getty@tty1.service` via `sudo tee`
   - Blank `ExecStart=` line REQUIRED before new one (systemd requires clearing inherited ExecStart first)
   - Use single-quoted heredoc (`<<'EOF'`) so shell does NOT expand `$TERM` — the literal `$TERM` must appear in the file for systemd to resolve at runtime. Substitute the autologin username via a separate `printf` or `sed` replacement (e.g., `sed "s/@@USER@@/$TARGET_USER/"` on the heredoc output), since single-quoted heredocs don't expand variables.
@@ -33,7 +34,7 @@ Create lib scripts for the `zram`, `network`, `desktop`, and `services` install 
 - Create `~/.config/environment.d/surface-linux.conf` for systemd user env
 - Note: all env/portal files are written for first boot — they take effect after reboot when UWSM starts the Hyprland session
 
-### lib/11-services.sh (`run_services`)
+### lib/12-services.sh (`run_services`)
 - Enable services via `sudo systemctl enable`: iptsd, NetworkManager, bluetooth, tuned
 - Enable tuned-ppd for powerprofilesctl CLI compatibility
 - Verify required packages are installed before enabling (check `systemctl list-unit-files | grep <unit>` and warn if missing, pointing to packages stage)

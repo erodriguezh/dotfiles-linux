@@ -41,9 +41,8 @@ Create the main entry point `install.sh` and shared library `lib/00-common.sh` t
 - [ ] `DNF=dnf5` defined in common.sh
 
 ## Done summary
-
-_To be filled after implementation._
-
+Created install.sh entry point with CLI parsing (--list/--only/--skip/--help), root check, sudo credential caching with keepalive, deterministic lib sourcing, and stage execution with recursive prerequisite resolution. Created lib/00-common.sh with shared constants (DNF=dnf5, REPO_DIR, CONFIG_DIR, LOG_FILE), 12-stage STAGES array with STAGE_DEPS prerequisite map, colored logging respecting NO_COLOR, utility functions (ensure_sudo, is_installed, is_surface_hardware), and ERR/EXIT trap handlers. Created .gitignore covering IDE files, all generated theme config files per contract, and logs.
 ## Evidence
-
-_To be filled after implementation._
+- Commits: 3461c07, d6de97d, f9e8627
+- Tests: manual review: CLI parsing, stage deps, trap behavior, .gitignore coverage
+- PRs:

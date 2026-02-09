@@ -3,11 +3,12 @@
 Create the Omarchy-inspired template engine that reads `colors.toml` and processes `.tpl` template files to generate themed configuration files. Also create `colors.toml` (Tokyo Night) and all `.tpl` template files.
 
 **Size:** M
-**Files:** `lib/08-theme.sh`, `colors.toml`, `templates/*.tpl`
+<!-- Updated by plan-sync: fn-1...1 added fonts stage at position 5, shifting subsequent lib file numbers by +1 -->
+**Files:** `lib/09-theme.sh`, `colors.toml`, `templates/*.tpl`
 
 ## Approach
 
-### lib/08-theme.sh (`run_theme`)
+### lib/09-theme.sh (`run_theme`)
 - Parse `colors.toml` (flat `key = "value"` format) with awk
 - For each key-value pair, generate 3 sed substitution variants:
   - `{{ key }}` → raw value (e.g., `#7aa2f7`)

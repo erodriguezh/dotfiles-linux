@@ -3,11 +3,12 @@
 Create the dotfiles deployment script that symlinks config files from the repo to `~/.config/`, deploys shell aliases, copies wallpapers, sets up the UWSM auto-start snippet, and creates helper scripts.
 
 **Size:** M
-**Files:** `lib/10-dotfiles.sh`, `config/bashrc.d/aliases.sh`, `scripts/clipboard-history.sh`
+<!-- Updated by plan-sync: fn-1...1 added fonts stage at position 5, shifting subsequent lib file numbers by +1 -->
+**Files:** `lib/11-dotfiles.sh`, `config/bashrc.d/aliases.sh`, `scripts/clipboard-history.sh`
 
 ## Approach
 
-### lib/10-dotfiles.sh (`run_dotfiles`)
+### lib/11-dotfiles.sh (`run_dotfiles`)
 - Symlink all directories in `config/` to `~/.config/` using `ln -snf` (with `-n` to prevent nested symlinks)
 - Handle Neovim specially: symlink `config/nvim/` → `~/.config/nvim/`
 - Create `~/.local/bin/` and add helper scripts (clipboard history, screenshot)
