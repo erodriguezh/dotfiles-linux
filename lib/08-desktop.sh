@@ -50,10 +50,11 @@ ExecStart=-/sbin/agetty --autologin @@USER@@ --noclear %I $TERM
 GETTY_EOF
 
     # Replace @@USER@@ placeholder with the actual username.
-    # Use a delimiter unlikely to appear in usernames to avoid sed injection.
+    # Escape sed-significant chars (& and \) and use | as delimiter to avoid
+    # issues with usernames containing /.
     local escaped_user
-    escaped_user="$(printf '%s\n' "$user" | sed 's/[&/\]/\\&/g')"
-    sudo sed -i "s/@@USER@@/${escaped_user}/" "$dropin_file"
+    escaped_user="$(printf '%s' "$user" | sed 's/[&\\]/\\&/g')"
+    sudo sed -i "s|@@USER@@|${escaped_user}|" "$dropin_file"
 
     sudo systemctl daemon-reload
     success "Getty auto-login override written and daemon reloaded"
@@ -95,7 +96,7 @@ _desktop_xdg_portal() {
     mkdir -p "$portal_dir"
     cat > "$portal_file" <<'EOF'
 [preferred]
-default=hyprland;gtk
+default=hyprland
 EOF
 
     success "XDG portal config written"
