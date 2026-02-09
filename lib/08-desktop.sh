@@ -49,8 +49,11 @@ ExecStart=
 ExecStart=-/sbin/agetty --autologin @@USER@@ --noclear %I $TERM
 GETTY_EOF
 
-    # Replace @@USER@@ placeholder with the actual username
-    sudo sed -i "s/@@USER@@/${user}/" "$dropin_file"
+    # Replace @@USER@@ placeholder with the actual username.
+    # Use a delimiter unlikely to appear in usernames to avoid sed injection.
+    local escaped_user
+    escaped_user="$(printf '%s\n' "$user" | sed 's/[&/\]/\\&/g')"
+    sudo sed -i "s/@@USER@@/${escaped_user}/" "$dropin_file"
 
     sudo systemctl daemon-reload
     success "Getty auto-login override written and daemon reloaded"
@@ -60,6 +63,11 @@ _desktop_plymouth_theme() {
     local desired_theme="spinner"
 
     info "Checking plymouth theme..."
+
+    if ! command -v plymouth-set-default-theme &>/dev/null; then
+        warn "plymouth-set-default-theme not found — skipping plymouth theme"
+        return 0
+    fi
 
     # Check current theme; only rebuild initrd if changed
     local current_theme
@@ -71,8 +79,11 @@ _desktop_plymouth_theme() {
     fi
 
     info "Setting plymouth theme to '${desired_theme}'..."
-    sudo plymouth-set-default-theme "$desired_theme" -R
-    success "Plymouth theme set to '${desired_theme}' (initrd rebuilt)"
+    if sudo plymouth-set-default-theme "$desired_theme" -R; then
+        success "Plymouth theme set to '${desired_theme}' (initrd rebuilt)"
+    else
+        warn "Failed to set plymouth theme — continuing"
+    fi
 }
 
 _desktop_xdg_portal() {

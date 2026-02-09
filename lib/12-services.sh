@@ -42,17 +42,12 @@ run_services() {
 _services_enable() {
     local svc="$1"
 
-    # Verify the unit exists before enabling
-    if ! systemctl list-unit-files "$svc" &>/dev/null; then
+    # Verify the unit file is actually present before enabling.
+    # systemctl list-unit-files always returns 0, so check output for a match.
+    local unit_match
+    unit_match="$(systemctl list-unit-files --no-legend "$svc" 2>/dev/null | grep -F "$svc" || true)"
+    if [[ -z "$unit_match" ]]; then
         warn "Unit '${svc}' not found — check that the required package is installed (see packages stage)"
-        return 0
-    fi
-
-    # Check if unit file is actually present in the listing
-    local unit_count
-    unit_count="$(systemctl list-unit-files "$svc" 2>/dev/null | grep -c "$svc" || true)"
-    if [[ "$unit_count" -eq 0 ]]; then
-        warn "Unit '${svc}' not found in unit files — check that the required package is installed"
         return 0
     fi
 

@@ -22,7 +22,11 @@ EOF
 
     # -- Restore SELinux contexts on conf.d files -----------------------------
     info "Restoring SELinux contexts on /etc/NetworkManager..."
-    sudo restorecon -R /etc/NetworkManager
+    if command -v restorecon &>/dev/null; then
+        sudo restorecon -R /etc/NetworkManager || warn "restorecon failed — continuing"
+    else
+        warn "restorecon not found — skipping SELinux relabel"
+    fi
 
     info "iwd backend configured. Takes effect after reboot."
 }
