@@ -14,15 +14,18 @@ run_repos() {
     # Verify plugins are functional
     if ! "$DNF" copr --help &>/dev/null; then
         error "dnf5 copr plugin is not functional after installing dnf5-plugins"
-        exit 1
+        return 1
     fi
     if ! "$DNF" config-manager --help &>/dev/null; then
         error "dnf5 config-manager plugin is not functional after installing dnf5-plugins"
-        exit 1
+        return 1
     fi
     success "dnf5 plugins verified (copr, config-manager)"
 
-    # -- Step 2: Enable COPR repositories ------------------------------------
+    # -- Step 2: Remove stale solopasha COPR if present ----------------------
+    sudo "$DNF" copr remove -y solopasha/hyprland &>/dev/null || true
+
+    # -- Step 3: Enable COPR repositories ------------------------------------
     local -a coprs=(
         "sdegler/hyprland"
         "scottames/ghostty"
@@ -35,7 +38,7 @@ run_repos() {
     done
     success "All COPR repositories enabled"
 
-    # -- Step 3: Add linux-surface external repo -----------------------------
+    # -- Step 4: Add linux-surface external repo -----------------------------
     info "Adding linux-surface repository..."
     sudo "$DNF" config-manager addrepo \
         --from-repofile=https://pkg.surfacelinux.com/fedora/linux-surface.repo \
@@ -45,7 +48,4 @@ run_repos() {
     # Log active repos for debugging
     info "Active repositories:"
     sudo "$DNF" repolist --enabled 2>/dev/null || true
-
-    # -- Step 4: Remove stale solopasha COPR if present ----------------------
-    sudo "$DNF" copr remove -y solopasha/hyprland &>/dev/null || true
 }

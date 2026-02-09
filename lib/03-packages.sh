@@ -42,6 +42,8 @@ run_packages() {
         # Audio/video
         wireplumber
         pipewire
+        pipewire-pulseaudio
+        pipewire-alsa
 
         # Notifications
         mako
@@ -52,6 +54,7 @@ run_packages() {
 
         # Networking
         NetworkManager
+        NetworkManager-wifi
         iwd
 
         # Keybind tools
