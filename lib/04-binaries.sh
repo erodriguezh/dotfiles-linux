@@ -3,25 +3,18 @@
 # Sourced by install.sh. Defines run_binaries() only.
 
 # ---------------------------------------------------------------------------
-# Constants
+# Helpers (prefixed to avoid namespace collisions)
 # ---------------------------------------------------------------------------
 
-readonly IMPALA_VERSION="0.7.3"
-readonly BLUETUI_VERSION="0.8.1"
-readonly LOCAL_BIN="${HOME}/.local/bin"
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-_ensure_local_bin() {
-    if [[ ! -d "$LOCAL_BIN" ]]; then
-        info "Creating ${LOCAL_BIN}..."
-        mkdir -p "$LOCAL_BIN"
+_binaries_ensure_local_bin() {
+    local local_bin="$1"
+    if [[ ! -d "$local_bin" ]]; then
+        info "Creating ${local_bin}..."
+        mkdir -p "$local_bin"
     fi
 }
 
-_map_arch() {
+_binaries_map_arch() {
     local arch
     arch="$(uname -m)"
     case "$arch" in
@@ -34,16 +27,17 @@ _map_arch() {
     esac
 }
 
-_install_binary() {
+_binaries_install() {
     local name="$1"
     local version="$2"
     local url="$3"
-    local dest="${LOCAL_BIN}/${name}"
+    local local_bin="$4"
+    local dest="${local_bin}/${name}"
 
     # Check if binary already exists with the expected version
     if [[ -x "$dest" ]]; then
         local current_version
-        current_version="$("$dest" --version 2>/dev/null || echo "")"
+        current_version="$("$dest" --version 2>&1 || true)"
         if [[ "$current_version" == *"$version"* ]]; then
             info "${name} v${version} already installed — skipping"
             return 0
@@ -51,9 +45,19 @@ _install_binary() {
     fi
 
     info "Downloading ${name} v${version}..."
-    curl -fSL "$url" -o "$dest"
-    chmod +x "$dest"
-    success "${name} v${version} installed to ${dest}"
+
+    # Download to temp file and atomically move on success
+    local tmp
+    tmp="$(mktemp "${dest}.tmp.XXXXXX")"
+    if curl -fSL "$url" -o "$tmp"; then
+        chmod +x "$tmp"
+        mv -f "$tmp" "$dest"
+        success "${name} v${version} installed to ${dest}"
+    else
+        rm -f "$tmp"
+        error "Failed to download ${name} v${version}"
+        return 1
+    fi
 }
 
 # ---------------------------------------------------------------------------
@@ -61,18 +65,22 @@ _install_binary() {
 # ---------------------------------------------------------------------------
 
 run_binaries() {
-    _ensure_local_bin
+    local impala_version="0.7.3"
+    local bluetui_version="0.8.1"
+    local local_bin="${HOME}/.local/bin"
+
+    _binaries_ensure_local_bin "$local_bin"
 
     local arch
-    arch="$(_map_arch)"
+    arch="$(_binaries_map_arch)"
 
     # -- Impala (WiFi TUI) ---------------------------------------------------
-    local impala_url="https://github.com/pythops/impala/releases/download/v${IMPALA_VERSION}/impala-${arch}-unknown-linux-musl"
-    _install_binary "impala" "$IMPALA_VERSION" "$impala_url"
+    local impala_url="https://github.com/pythops/impala/releases/download/v${impala_version}/impala-${arch}-unknown-linux-musl"
+    _binaries_install "impala" "$impala_version" "$impala_url" "$local_bin"
 
     # -- bluetui (Bluetooth TUI) ---------------------------------------------
-    local bluetui_url="https://github.com/pythops/bluetui/releases/download/v${BLUETUI_VERSION}/bluetui-${arch}-linux-musl"
-    _install_binary "bluetui" "$BLUETUI_VERSION" "$bluetui_url"
+    local bluetui_url="https://github.com/pythops/bluetui/releases/download/v${bluetui_version}/bluetui-${arch}-linux-musl"
+    _binaries_install "bluetui" "$bluetui_version" "$bluetui_url" "$local_bin"
 
     success "All pre-built binaries installed"
 }

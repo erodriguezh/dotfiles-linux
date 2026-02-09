@@ -31,7 +31,7 @@ run_repos() {
 
     for copr in "${coprs[@]}"; do
         info "Enabling COPR: ${copr}..."
-        sudo "$DNF" -y copr enable "$copr"
+        sudo "$DNF" copr enable -y "$copr"
     done
     success "All COPR repositories enabled"
 
@@ -41,6 +41,10 @@ run_repos() {
         --from-repofile=https://pkg.surfacelinux.com/fedora/linux-surface.repo \
         --overwrite
     success "linux-surface repository added"
+
+    # Log active repos for debugging
+    info "Active repositories:"
+    sudo "$DNF" repolist --enabled 2>/dev/null || true
 
     # -- Step 4: Remove stale solopasha COPR if present ----------------------
     sudo "$DNF" copr remove solopasha/hyprland 2>/dev/null || true
