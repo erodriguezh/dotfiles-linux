@@ -66,10 +66,10 @@ Format a second USB stick as FAT32 with the label `KICKSTART`, then copy the kic
 ```bash
 # Format and label a second USB (replace /dev/sdY with your device)
 sudo mkfs.vfat -n KICKSTART /dev/sdY1
-mkdir -p /mnt/ks
-mount /dev/sdY1 /mnt/ks
-cp kickstart/surface-go3.ks /mnt/ks/surface-go3.ks
-umount /mnt/ks
+sudo mkdir -p /mnt/ks
+sudo mount /dev/sdY1 /mnt/ks
+sudo cp kickstart/surface-go3.ks /mnt/ks/surface-go3.ks
+sudo umount /mnt/ks
 ```
 
 Insert both USB drives (installer + kickstart) and boot. Boot parameter:
@@ -86,11 +86,11 @@ Use [Ventoy](https://www.ventoy.net/) to create a multiboot USB. Ventoy preserve
 3. Create a `kickstart/` folder on the Ventoy partition and copy the kickstart file:
    ```bash
    # Mount the Ventoy data partition (it is typically labeled "Ventoy")
-   mkdir -p /mnt/usb
-   mount /dev/disk/by-label/Ventoy /mnt/usb
-   mkdir -p /mnt/usb/kickstart
-   cp kickstart/surface-go3.ks /mnt/usb/kickstart/
-   umount /mnt/usb
+   sudo mkdir -p /mnt/usb
+   sudo mount /dev/disk/by-label/Ventoy /mnt/usb
+   sudo mkdir -p /mnt/usb/kickstart
+   sudo cp kickstart/surface-go3.ks /mnt/usb/kickstart/
+   sudo umount /mnt/usb
    ```
 4. Boot from USB, select the Fedora ISO in Ventoy, then edit the boot entry to add:
    ```
@@ -223,10 +223,10 @@ Running the script multiple times is safe. It converges to the same end-state wi
 
 ## Secure Boot
 
-This setup assumes Secure Boot is **disabled** in the UEFI firmware. If you prefer to keep Secure Boot enabled, you can enroll the linux-surface signing keys after installation:
+This setup assumes Secure Boot is **disabled** in the UEFI firmware. If you prefer to keep Secure Boot enabled, first run `./install.sh` (or at least `./install.sh --only repos`) to add the linux-surface repository, then enroll the signing keys:
 
 ```bash
-sudo dnf install surface-secureboot
+sudo dnf5 install surface-secureboot
 sudo surface-secureboot enroll
 ```
 
