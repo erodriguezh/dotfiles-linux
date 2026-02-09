@@ -30,11 +30,16 @@ EOF
     success "NetworkManager iwd backend config written"
 
     # -- Restore SELinux contexts on conf.d files -----------------------------
-    info "Restoring SELinux contexts on /etc/NetworkManager..."
-    if _network_find_cmd restorecon; then
-        sudo restorecon -R /etc/NetworkManager || warn "restorecon failed — continuing"
+    # Only attempt relabeling when SELinux is actually enforcing/permissive.
+    if _network_find_cmd selinuxenabled && selinuxenabled 2>/dev/null; then
+        info "Restoring SELinux contexts on /etc/NetworkManager..."
+        if _network_find_cmd restorecon; then
+            sudo restorecon -R /etc/NetworkManager || warn "restorecon failed — continuing"
+        else
+            warn "restorecon not found — skipping SELinux relabel"
+        fi
     else
-        warn "restorecon not found — skipping SELinux relabel"
+        info "SELinux disabled or not present — skipping restorecon"
     fi
 
     info "iwd backend configured. Takes effect after reboot."

@@ -71,17 +71,24 @@ GETTY_EOF
 
 _desktop_plymouth_theme() {
     local desired_theme="spinner"
+    local plymouth_cmd="plymouth-set-default-theme"
 
     info "Checking plymouth theme..."
 
-    if ! _desktop_find_cmd plymouth-set-default-theme; then
+    # Resolve full path — the binary lives in /usr/sbin which may not be on
+    # a regular user's PATH.
+    if [[ -x "/usr/sbin/plymouth-set-default-theme" ]]; then
+        plymouth_cmd="/usr/sbin/plymouth-set-default-theme"
+    elif [[ -x "/sbin/plymouth-set-default-theme" ]]; then
+        plymouth_cmd="/sbin/plymouth-set-default-theme"
+    elif ! command -v plymouth-set-default-theme &>/dev/null; then
         warn "plymouth-set-default-theme not found — skipping plymouth theme"
         return 0
     fi
 
     # Check current theme; only rebuild initrd if changed
     local current_theme
-    current_theme="$(plymouth-set-default-theme 2>/dev/null || echo "")"
+    current_theme="$("$plymouth_cmd" 2>/dev/null || echo "")"
 
     if [[ "$current_theme" == "$desired_theme" ]]; then
         info "Plymouth theme already set to '${desired_theme}' — skipping initrd rebuild"
@@ -89,7 +96,7 @@ _desktop_plymouth_theme() {
     fi
 
     info "Setting plymouth theme to '${desired_theme}'..."
-    if sudo plymouth-set-default-theme "$desired_theme" -R; then
+    if sudo "$plymouth_cmd" "$desired_theme" -R; then
         success "Plymouth theme set to '${desired_theme}' (initrd rebuilt)"
     else
         warn "Failed to set plymouth theme — continuing"
