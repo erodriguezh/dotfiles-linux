@@ -14,7 +14,7 @@ run_zram() {
     info "Writing /etc/systemd/zram-generator.conf..."
     sudo tee /etc/systemd/zram-generator.conf >/dev/null <<'EOF'
 # Surface Go 3 zram configuration
-# 4GB RAM -> 4GB zram (1:1 ratio with zstd compression)
+# zram size = total RAM (1:1 ratio with zstd compression)
 [zram0]
 zram-size = ram
 compression-algorithm = zstd

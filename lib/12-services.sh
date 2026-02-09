@@ -19,8 +19,11 @@ run_services() {
     )
 
     local svc
+    local skipped=0
     for svc in "${services[@]}"; do
-        _services_enable "$svc"
+        if ! _services_enable "$svc"; then
+            skipped=$(( skipped + 1 ))
+        fi
     done
 
     # -- Set tuned profile to powersave ---------------------------------------
@@ -35,7 +38,11 @@ run_services() {
         warn "tuned-adm not found — tuned profile will need to be set manually after reboot"
     fi
 
-    success "All services enabled"
+    if [[ "$skipped" -gt 0 ]]; then
+        warn "Service enablement complete (${skipped} unit(s) skipped — see warnings above)"
+    else
+        success "All services enabled"
+    fi
 }
 
 # ---------------------------------------------------------------------------
@@ -62,7 +69,7 @@ _services_enable() {
         | awk -v name="$svc" '$1 == name {print $1}' || true)"
     if [[ -z "$unit_match" ]]; then
         warn "Unit '${svc}' not found — check that the required package is installed (see packages stage)"
-        return 0
+        return 1
     fi
 
     info "Enabling ${svc}..."
