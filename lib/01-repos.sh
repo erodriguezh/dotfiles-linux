@@ -47,5 +47,5 @@ run_repos() {
     sudo "$DNF" repolist --enabled 2>/dev/null || true
 
     # -- Step 4: Remove stale solopasha COPR if present ----------------------
-    sudo "$DNF" copr remove solopasha/hyprland 2>/dev/null || true
+    sudo "$DNF" copr remove -y solopasha/hyprland &>/dev/null || true
 }

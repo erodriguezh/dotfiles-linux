@@ -14,7 +14,7 @@ Create 4 lib scripts covering the `repos`, `kernel`, `packages`, and `binaries` 
 - Remove stale solopasha COPR if present: `sudo $DNF copr remove solopasha/hyprland 2>/dev/null || true`
 
 ### lib/02-kernel.sh (`run_kernel`)
-- Install `kernel-surface iptsd libwacom-surface` with `--allowerasing` flag
+- Install `kernel-surface libwacom-surface` with `--allowerasing` flag (iptsd excluded per epic touchscreen-disabled decision)
 - Install only — do NOT enable services here (all `systemctl enable` centralized in Task 4)
 
 ### lib/03-packages.sh (`run_packages`)
@@ -54,7 +54,7 @@ Create 4 lib scripts covering the `repos`, `kernel`, `packages`, and `binaries` 
 - [ ] Plugin verification: `$DNF copr --help` and `$DNF config-manager --help` succeed after install (fail with clear error if not)
 - [ ] 3 COPRs enabled: sdegler/hyprland, scottames/ghostty, alternateved/tofi
 - [ ] linux-surface external repo added via `config-manager addrepo`
-- [ ] `kernel-surface`, `iptsd`, `libwacom-surface` installed with `--allowerasing`
+- [ ] `kernel-surface`, `libwacom-surface` installed with `--allowerasing` (iptsd excluded per epic touchscreen-disabled decision)
 - [ ] Full Hyprland ecosystem from COPR installed
 - [ ] XDG portal stack installed: xdg-desktop-portal, xdg-desktop-portal-gtk, xdg-desktop-portal-hyprland
 - [ ] Bluetooth + power packages installed: bluez, tuned, tuned-ppd
