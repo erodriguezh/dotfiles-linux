@@ -57,9 +57,27 @@ Note: The keyboard layout affects the `%pre` password prompt. Make sure you know
 
 ### Step 4: Make the Kickstart available
 
-Choose one of two methods:
+Choose one of three methods:
 
-#### Method A: Kickstart on USB via Ventoy
+#### Method A: Second USB drive
+
+Format a second USB stick as FAT32 with the label `KICKSTART`, then copy the kickstart file to it:
+
+```bash
+# Format and label a second USB (replace /dev/sdY with your device)
+sudo mkfs.vfat -n KICKSTART /dev/sdY1
+mkdir -p /mnt/ks
+mount /dev/sdY1 /mnt/ks
+cp kickstart/surface-go3.ks /mnt/ks/surface-go3.ks
+umount /mnt/ks
+```
+
+Insert both USB drives (installer + kickstart) and boot. Boot parameter:
+```
+inst.ks=hd:LABEL=KICKSTART:/surface-go3.ks
+```
+
+#### Method B: Ventoy (single USB)
 
 Use [Ventoy](https://www.ventoy.net/) to create a multiboot USB. Ventoy preserves a data partition where you can place the kickstart file alongside ISO images.
 
@@ -79,7 +97,7 @@ Use [Ventoy](https://www.ventoy.net/) to create a multiboot USB. Ventoy preserve
    inst.ks=hd:LABEL=Ventoy:/kickstart/surface-go3.ks
    ```
 
-#### Method B: Serve via HTTP (recommended)
+#### Method C: Serve via HTTP (recommended)
 
 Serve the kickstart file from another machine on the same network:
 

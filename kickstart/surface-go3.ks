@@ -63,7 +63,7 @@ firewall --enabled --service=mdns
 # Bootloader
 # ============================================================================
 
-bootloader --location=mbr --driveorder=mmcblk0
+bootloader --boot-drive=mmcblk0
 
 # ============================================================================
 # Package selection — Minimal Install + sudo
@@ -88,8 +88,8 @@ set -Eeuo pipefail
 
 # Bind stdin/stdout to a TTY so prompts are visible in Anaconda
 TTY="/dev/tty1"
-[[ -e /dev/tty3 ]] && TTY="/dev/tty3"
-exec <"$TTY" >"$TTY" 2>"$TTY"
+[[ ! -e "$TTY" && -e /dev/tty3 ]] && TTY="/dev/tty3"
+exec <"$TTY" >"$TTY" 2>&1
 
 echo ""
 echo "============================================"
@@ -134,8 +134,9 @@ while true; do
     break
 done
 
-# Hash password with SHA-512
-HASH=$(openssl passwd -6 "$PASSWORD")
+# Hash password with SHA-512 (feed via stdin to avoid process listing exposure)
+HASH="$(printf '%s' "$PASSWORD" | openssl passwd -6 -stdin)"
+unset PASSWORD PASSWORD_CONFIRM
 
 # Write kickstart user directive for %include
 echo "user --name=${USERNAME} --groups=wheel --password=${HASH} --iscrypted" \
@@ -176,9 +177,7 @@ if [[ "$REPO_URL" == *"CHANGEME"* ]]; then
 fi
 
 # Read the username created in %pre
-USERNAME=$(cat /tmp/ks-username)
-
-if [[ -z "$USERNAME" ]]; then
+if ! read -r USERNAME < /tmp/ks-username || [[ -z "$USERNAME" ]]; then
     echo "ERROR: Could not read username from /tmp/ks-username"
     exit 1
 fi
