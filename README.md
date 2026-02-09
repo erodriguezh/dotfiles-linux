@@ -36,33 +36,48 @@ sudo dd if=Fedora-Everything-netinst-x86_64-43-*.iso of=/dev/sdX bs=4M status=pr
 
 ### Step 3: Edit the Kickstart file
 
-Open `kickstart/surface-go3.ks` and set `REPO_URL` to your clone of this repository:
+Open `kickstart/surface-go3.ks` and customize these values:
 
-```
-REPO_URL="https://github.com/youruser/surface-linux.git"
-```
+1. **REPO_URL** (required) -- set to your clone of this repository:
+   ```
+   REPO_URL="https://github.com/youruser/surface-linux.git"
+   ```
+
+2. **Keyboard layout** (optional) -- defaults to German (`de`). Change if needed:
+   ```
+   keyboard --xlayouts='us'
+   ```
+
+3. **Timezone** (optional) -- defaults to `Europe/Vienna`. Change if needed:
+   ```
+   timezone America/New_York --utc
+   ```
+
+Note: The keyboard layout affects the `%pre` password prompt. Make sure you know which layout is active when typing your password to avoid lockout.
 
 ### Step 4: Make the Kickstart available
 
 Choose one of two methods:
 
-#### Method A: Copy to a second USB partition
+#### Method A: Kickstart on USB via Ventoy
 
-If your ISO tool preserves the USB filesystem label, you can place the kickstart file on the USB alongside the ISO data. This requires creating a small extra partition or using a tool like Ventoy that supports additional files.
+Use [Ventoy](https://www.ventoy.net/) to create a multiboot USB. Ventoy preserves a data partition where you can place the kickstart file alongside ISO images.
 
-```bash
-# Mount the data partition and copy the kickstart
-mkdir -p /mnt/usb
-mount /dev/sdX2 /mnt/usb
-mkdir -p /mnt/usb/kickstart
-cp kickstart/surface-go3.ks /mnt/usb/kickstart/
-umount /mnt/usb
-```
-
-Boot parameter:
-```
-inst.ks=hd:LABEL=YOURUSB:/kickstart/surface-go3.ks
-```
+1. Install Ventoy on your USB drive (this creates a `Ventoy` data partition).
+2. Copy the Fedora Everything ISO to the Ventoy partition.
+3. Create a `kickstart/` folder on the Ventoy partition and copy the kickstart file:
+   ```bash
+   # Mount the Ventoy data partition (it is typically labeled "Ventoy")
+   mkdir -p /mnt/usb
+   mount /dev/disk/by-label/Ventoy /mnt/usb
+   mkdir -p /mnt/usb/kickstart
+   cp kickstart/surface-go3.ks /mnt/usb/kickstart/
+   umount /mnt/usb
+   ```
+4. Boot from USB, select the Fedora ISO in Ventoy, then edit the boot entry to add:
+   ```
+   inst.ks=hd:LABEL=Ventoy:/kickstart/surface-go3.ks
+   ```
 
 #### Method B: Serve via HTTP (recommended)
 

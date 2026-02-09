@@ -23,7 +23,7 @@ lang en_US.UTF-8
 keyboard --xlayouts='de'
 timezone Europe/Vienna --utc
 
-# Network — user connects WiFi via Anaconda GUI (Everything ISO needs network)
+# Network — user connects WiFi via Anaconda text UI (Everything ISO needs network)
 network --bootproto=dhcp --activate
 
 # ============================================================================
@@ -44,7 +44,7 @@ reqpart --add-boot
 
 # Root partition — ext4, uses remaining space after EFI + /boot
 # No swap partition (zram handles swap in-memory)
-part / --fstype=ext4 --grow --ondisk=mmcblk0
+part / --fstype=ext4 --size=10240 --grow --ondisk=mmcblk0
 
 # ============================================================================
 # Security
@@ -72,6 +72,7 @@ bootloader --location=mbr --driveorder=mmcblk0
 %packages
 @^minimal-environment
 sudo
+git
 %end
 
 # ============================================================================
@@ -83,6 +84,12 @@ sudo
 
 %pre
 #!/bin/bash
+set -Eeuo pipefail
+
+# Bind stdin/stdout to a TTY so prompts are visible in Anaconda
+TTY="/dev/tty1"
+[[ -e /dev/tty3 ]] && TTY="/dev/tty3"
+exec <"$TTY" >"$TTY" 2>"$TTY"
 
 echo ""
 echo "============================================"
@@ -150,15 +157,23 @@ echo ""
 # ============================================================================
 # Runs after package installation. Uses --nochroot to access both /tmp
 # (installer environment) and /mnt/sysroot (installed system).
-# Installs git inside the chroot, clones the repo, and sets ownership.
+# Clones the repo into the user's home and sets ownership.
 
 %post --nochroot --log=/mnt/sysroot/var/log/kickstart-post.log
 #!/bin/bash
+set -Eeuo pipefail
 
 # ---- EDIT THIS URL BEFORE USE ----------------------------------------------
 # Set this to your clone of the surface-linux repository (HTTPS, public).
 REPO_URL="https://github.com/CHANGEME/surface-linux.git"
 # -----------------------------------------------------------------------------
+
+# Guard against forgetting to edit REPO_URL
+if [[ "$REPO_URL" == *"CHANGEME"* ]]; then
+    echo "ERROR: You must edit REPO_URL in kickstart/surface-go3.ks before installing."
+    echo "Set it to your clone of the surface-linux repository."
+    exit 1
+fi
 
 # Read the username created in %pre
 USERNAME=$(cat /tmp/ks-username)
@@ -170,14 +185,16 @@ fi
 
 echo "Bootstrapping surface-linux for user: ${USERNAME}"
 
-# Install git inside the target system
-chroot /mnt/sysroot /usr/bin/dnf5 install -y git
+# Ensure home directory exists with correct ownership
+chroot /mnt/sysroot /usr/bin/mkdir -p "/home/${USERNAME}"
+chroot /mnt/sysroot /usr/bin/chown "${USERNAME}:${USERNAME}" "/home/${USERNAME}"
 
 # Clone the repository into the user's home directory
+# (git is installed via %packages, available in chroot)
 chroot /mnt/sysroot /usr/bin/git clone "$REPO_URL" \
     "/home/${USERNAME}/surface-linux"
 
-# Set correct ownership (user:user, not root)
+# Set correct ownership on the cloned repo (user:user, not root)
 chroot /mnt/sysroot /usr/bin/chown -R "${USERNAME}:${USERNAME}" \
     "/home/${USERNAME}/surface-linux"
 
