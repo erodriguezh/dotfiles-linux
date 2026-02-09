@@ -25,9 +25,12 @@ run_services() {
 
     # -- Set tuned profile to powersave ---------------------------------------
     info "Setting tuned profile to 'powersave'..."
-    if command -v tuned-adm &>/dev/null; then
-        sudo tuned-adm profile powersave || warn "Failed to set tuned profile (may work after reboot)"
-        success "Tuned profile set to 'powersave'"
+    if _services_find_cmd tuned-adm; then
+        if sudo tuned-adm profile powersave; then
+            success "Tuned profile set to 'powersave'"
+        else
+            warn "Failed to set tuned profile (may work after reboot)"
+        fi
     else
         warn "tuned-adm not found — tuned profile will need to be set manually after reboot"
     fi
@@ -39,13 +42,24 @@ run_services() {
 # Helpers (prefixed to avoid namespace collisions)
 # ---------------------------------------------------------------------------
 
+_services_find_cmd() {
+    # Check common sbin paths explicitly — command -v may miss /usr/sbin tools
+    # when running as a non-root user with a limited PATH.
+    local cmd="$1"
+    command -v "$cmd" &>/dev/null && return 0
+    [[ -x "/usr/sbin/${cmd}" ]] && return 0
+    [[ -x "/sbin/${cmd}" ]] && return 0
+    return 1
+}
+
 _services_enable() {
     local svc="$1"
 
     # Verify the unit file is actually present before enabling.
-    # systemctl list-unit-files always returns 0, so check output for a match.
+    # Match the first column exactly to avoid false positives.
     local unit_match
-    unit_match="$(systemctl list-unit-files --no-legend "$svc" 2>/dev/null | grep -F "$svc" || true)"
+    unit_match="$(systemctl list-unit-files --no-legend "$svc" 2>/dev/null \
+        | awk -v name="$svc" '$1 == name {print $1}' || true)"
     if [[ -z "$unit_match" ]]; then
         warn "Unit '${svc}' not found — check that the required package is installed (see packages stage)"
         return 0
