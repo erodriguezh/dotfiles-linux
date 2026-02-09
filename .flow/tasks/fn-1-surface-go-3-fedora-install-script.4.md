@@ -35,7 +35,8 @@ Create lib scripts for the `zram`, `network`, `desktop`, and `services` install 
 - Note: all env/portal files are written for first boot — they take effect after reboot when UWSM starts the Hyprland session
 
 ### lib/12-services.sh (`run_services`)
-- Enable services via `sudo systemctl enable`: iptsd, NetworkManager, bluetooth, tuned
+<!-- Updated by plan-sync: fn-1...2 excluded iptsd package (touchscreen disabled per epic), so iptsd.service must not be enabled -->
+- Enable services via `sudo systemctl enable`: NetworkManager, bluetooth, tuned
 - Enable tuned-ppd for powerprofilesctl CLI compatibility
 - Verify required packages are installed before enabling (check `systemctl list-unit-files | grep <unit>` and warn if missing, pointing to packages stage)
 - `systemctl enable` is already idempotent
@@ -61,7 +62,8 @@ Create lib scripts for the `zram`, `network`, `desktop`, and `services` install 
 - [ ] Plymouth theme set only if changed
 - [ ] XDG portal config points to hyprland
 - [ ] UWSM env files created with theming variables
-- [ ] All services enabled: iptsd, NetworkManager, bluetooth, tuned, tuned-ppd
+<!-- Updated by plan-sync: fn-1...2 excluded iptsd package (touchscreen disabled), removed iptsd from service list -->
+- [ ] All services enabled: NetworkManager, bluetooth, tuned, tuned-ppd
 - [ ] Service enablement verifies units exist (graceful warning if missing)
 - [ ] All system writes use `sudo`
 - [ ] Idempotent: re-running produces no errors

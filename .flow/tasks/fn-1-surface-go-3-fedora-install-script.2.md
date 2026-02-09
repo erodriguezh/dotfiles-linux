@@ -64,9 +64,8 @@ Create 4 lib scripts covering the `repos`, `kernel`, `packages`, and `binaries` 
 - [ ] All `sudo` used explicitly (not running as root)
 
 ## Done summary
-
-_To be filled after implementation._
-
+Added 4 lib scripts for Fedora 43 install stages: 01-repos.sh (dnf5 plugins, 3 COPRs, linux-surface repo), 02-kernel.sh (kernel-surface + libwacom-surface with hardware detection), 03-packages.sh (full desktop/system package list via array), and 04-binaries.sh (atomic download of Impala v0.7.3 + bluetui v0.8.1 to ~/.local/bin). All operations idempotent, use sudo explicitly, and follow existing code patterns.
 ## Evidence
-
-_To be filled after implementation._
+- Commits: 043c41a, 274bd04, cbf6a9f, df90b7a
+- Tests: bash -n lib/01-repos.sh, bash -n lib/02-kernel.sh, bash -n lib/03-packages.sh, bash -n lib/04-binaries.sh
+- PRs:
