@@ -32,15 +32,6 @@ run_desktop() {
 # Helpers (prefixed to avoid namespace collisions)
 # ---------------------------------------------------------------------------
 
-_desktop_find_cmd() {
-    # Check common sbin paths explicitly — command -v may miss /usr/sbin tools
-    local cmd="$1"
-    command -v "$cmd" &>/dev/null && return 0
-    [[ -x "/usr/sbin/${cmd}" ]] && return 0
-    [[ -x "/sbin/${cmd}" ]] && return 0
-    return 1
-}
-
 _desktop_getty_autologin() {
     local user="$1"
     local dropin_dir="/etc/systemd/system/getty@tty1.service.d"

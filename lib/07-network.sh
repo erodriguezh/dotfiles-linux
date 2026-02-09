@@ -31,7 +31,8 @@ EOF
 
     # -- Restore SELinux contexts on conf.d files -----------------------------
     # Only attempt relabeling when SELinux is actually enforcing/permissive.
-    if _network_find_cmd selinuxenabled && selinuxenabled 2>/dev/null; then
+    # Use sudo for selinuxenabled so it resolves via secure_path.
+    if _network_find_cmd selinuxenabled && sudo selinuxenabled 2>/dev/null; then
         info "Restoring SELinux contexts on /etc/NetworkManager..."
         if _network_find_cmd restorecon; then
             sudo restorecon -R /etc/NetworkManager || warn "restorecon failed — continuing"
