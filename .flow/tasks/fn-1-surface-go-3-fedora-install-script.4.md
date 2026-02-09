@@ -69,9 +69,8 @@ Create lib scripts for the `zram`, `network`, `desktop`, and `services` install 
 - [ ] Idempotent: re-running produces no errors
 
 ## Done summary
-
-_To be filled after implementation._
-
+Added four system configuration lib scripts: zram swap with zstd compression and sysctl tuning (06-zram.sh), NetworkManager iwd backend with SELinux-aware restorecon (07-network.sh), desktop session setup including getty auto-login, plymouth theme, XDG portal, UWSM env files, and systemd user environment (08-desktop.sh), and service enablement with unit existence verification (12-services.sh). Also corrected stage dependencies for zram and network in 00-common.sh.
 ## Evidence
-
-_To be filled after implementation._
+- Commits: 11d9b91672db7760534625ea0ec07787ce5da254
+- Tests: bash -n lib/06-zram.sh, bash -n lib/07-network.sh, bash -n lib/08-desktop.sh, bash -n lib/12-services.sh
+- PRs:
