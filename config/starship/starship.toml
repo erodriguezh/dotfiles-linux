@@ -1,0 +1,24 @@
+# starship.toml — Starship prompt with Tokyo Night colors
+# https://starship.rs/config/
+
+format = """
+$directory\
+$git_branch\
+$git_status\
+$character"""
+
+[character]
+success_symbol = "[>](bold #7aa2f7)"
+error_symbol = "[>](bold #f7768e)"
+
+[directory]
+style = "bold #7dcfff"
+truncation_length = 3
+
+[git_branch]
+style = "bold #bb9af7"
+format = "[$symbol$branch]($style) "
+
+[git_status]
+style = "#e0af68"
+format = '([$all_status$ahead_behind]($style) )'

@@ -70,9 +70,8 @@ config/gtk-4.0/     → ~/.config/gtk-4.0/
 - [ ] Idempotent: re-running produces correct symlinks, no duplicate .bashrc entries
 
 ## Done summary
-
-_To be filled after implementation._
-
+Implemented dotfiles deployment stage (lib/11-dotfiles.sh) that symlinks config dirs to ~/.config/ with ln -snfT, deploys helper scripts to ~/.local/bin/, copies wallpapers, writes/upserts .Xresources, appends bashrc.d sourcing loop to ~/.bashrc, and adds UWSM auto-start snippet to ~/.bash_profile. Created config/bashrc.d/ with aliases.sh, starship.sh, and path.sh, plus config/starship/starship.toml with Tokyo Night colors.
 ## Evidence
-
-_To be filled after implementation._
+- Commits: 03d8506, f7a8473
+- Tests: shellcheck review via RepoPrompt
+- PRs:
