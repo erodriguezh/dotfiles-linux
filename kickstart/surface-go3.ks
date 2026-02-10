@@ -11,7 +11,7 @@
 # Boot with one of:
 #   inst.ks=hd:LABEL=KICKSTART:/surface-go3.ks        (second USB drive)
 #   inst.ks=hd:LABEL=Ventoy:/kickstart/surface-go3.ks  (Ventoy USB)
-#   inst.ks=http://YOUR_IP:PORT/surface-go3.ks          (HTTP server)
+inst.ks=https://raw.githubusercontent.com/erodriguezh/dotfiles-linux/main/kickstart/surface-go3.ks          (HTTP server)
 
 # ============================================================================
 # Installation settings
@@ -168,7 +168,7 @@ set -Eeuo pipefail
 
 # ---- EDIT THIS URL BEFORE USE ----------------------------------------------
 # Set this to your clone of the surface-linux repository (HTTPS, public).
-REPO_URL="https://github.com/CHANGEME/surface-linux.git"
+REPO_URL="https://github.com/erodriguezh/dotfiles-linux.git"
 # -----------------------------------------------------------------------------
 
 # Guard against forgetting to edit REPO_URL
