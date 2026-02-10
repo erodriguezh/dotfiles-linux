@@ -69,7 +69,7 @@ _dotfiles_deploy_local_bin() {
         [[ -f "$f" ]] || continue
         name="$(basename "$f")"
         ln -snf "$f" "${dst_dir}/${name}"
-        chmod +x "$f"
+        [[ -x "$f" ]] || chmod +x "$f"
         count=$(( count + 1 ))
     done
 
@@ -135,8 +135,15 @@ _dotfiles_deploy_xresources() {
         return 0
     fi
 
-    echo "$desired_content" > "$xresources"
-    success "Wrote ~/.Xresources (Xft.dpi: 144 for 1.5x scaling)"
+    # Upsert: update existing Xft.dpi line if present, otherwise append
+    if [[ -f "$xresources" ]] && grep -qE '^[[:space:]]*Xft\.dpi:' "$xresources"; then
+        sed -i -E 's/^[[:space:]]*Xft\.dpi:.*/Xft.dpi: 144/' "$xresources"
+        success "Updated ~/.Xresources (Xft.dpi: 144 for 1.5x scaling)"
+        return 0
+    fi
+
+    printf '%s\n' "$desired_content" >> "$xresources"
+    success "Appended to ~/.Xresources (Xft.dpi: 144 for 1.5x scaling)"
 }
 
 _dotfiles_bashrc_sourcing() {
@@ -170,7 +177,7 @@ _dotfiles_bash_profile_uwsm() {
     # MUST be in .bash_profile, NOT .bashrc — otherwise every subshell
     # would try to start Hyprland.
     local bash_profile="${HOME}/.bash_profile"
-    local guard_string='uwsm check may-start'
+    local guard_string='# Auto-start Hyprland via UWSM on TTY login'
 
     if [[ -f "$bash_profile" ]] && grep -qF "$guard_string" "$bash_profile"; then
         info ".bash_profile already has UWSM snippet — skipping"
@@ -180,7 +187,7 @@ _dotfiles_bash_profile_uwsm() {
     cat >> "$bash_profile" <<'UWSM_BLOCK'
 
 # Auto-start Hyprland via UWSM on TTY login
-if uwsm check may-start; then
+if command -v uwsm &>/dev/null && uwsm check may-start; then
     exec uwsm start hyprland.desktop
 fi
 UWSM_BLOCK
