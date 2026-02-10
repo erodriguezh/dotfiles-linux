@@ -34,6 +34,12 @@ Use `dd`, Fedora Media Writer, or Rufus (Windows):
 sudo dd if=Fedora-Everything-netinst-x86_64-43-*.iso of=/dev/sdX bs=4M status=progress oflag=sync
 ```
 
+MacOS - Find the USB path executing
+
+```bash
+diskutil list
+```
+
 ### Step 3: Edit the Kickstart file
 
 Open `kickstart/surface-go3.ks` and customize these values:
