@@ -6,12 +6,12 @@
 #
 # BEFORE USE: Edit REPO_URL below to point to your clone of this repository.
 #   - HTTPS URL for public repos (no auth needed)
-#   - Example: https://github.com/youruser/surface-linux.git
+#   - Example: https://github.com/erodriguezh/dotfiles-linux.git
 #
 # Boot with one of:
 #   inst.ks=hd:LABEL=KICKSTART:/surface-go3.ks        (second USB drive)
 #   inst.ks=hd:LABEL=Ventoy:/kickstart/surface-go3.ks  (Ventoy USB)
-inst.ks=https://raw.githubusercontent.com/erodriguezh/dotfiles-linux/main/kickstart/surface-go3.ks          (HTTP server)
+#   inst.ks=https://raw.githubusercontent.com/erodriguezh/dotfiles-linux/main/kickstart/surface-go3.ks  (GitHub raw URL)
 
 # ============================================================================
 # Installation settings
