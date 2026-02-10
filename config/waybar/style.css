@@ -1,0 +1,133 @@
+/* Waybar styles — Tokyo Night themed via generated colors.css */
+@import "colors.css";
+
+/* ---------------------------------------------------------------------------
+ * Global
+ * ----------------------------------------------------------------------- */
+
+* {
+    font-family: "JetBrainsMono Nerd Font", monospace;
+    font-size: 13px;
+    min-height: 0;
+    border: none;
+    border-radius: 0;
+}
+
+window#waybar {
+    background-color: @background;
+    color: @foreground;
+}
+
+/* ---------------------------------------------------------------------------
+ * Tooltips
+ * ----------------------------------------------------------------------- */
+
+tooltip {
+    background-color: @background;
+    border: 1px solid @accent;
+    border-radius: 8px;
+}
+
+tooltip label {
+    color: @foreground;
+    padding: 4px;
+}
+
+/* ---------------------------------------------------------------------------
+ * Left — Workspaces
+ * ----------------------------------------------------------------------- */
+
+#workspaces button {
+    padding: 0 6px;
+    color: @color8;
+    background: transparent;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s ease;
+}
+
+#workspaces button.active {
+    color: @accent;
+    border-bottom-color: @accent;
+}
+
+#workspaces button.urgent {
+    color: @color1;
+    border-bottom-color: @color1;
+}
+
+#workspaces button:hover {
+    color: @foreground;
+    background: @selection_bg;
+}
+
+/* ---------------------------------------------------------------------------
+ * Center — Clock
+ * ----------------------------------------------------------------------- */
+
+#clock {
+    color: @foreground;
+    font-weight: bold;
+}
+
+/* ---------------------------------------------------------------------------
+ * Right — System modules
+ * ----------------------------------------------------------------------- */
+
+#bluetooth,
+#network,
+#pulseaudio,
+#cpu,
+#battery,
+#tray,
+#custom-tray-icon {
+    padding: 0 8px;
+    color: @foreground;
+}
+
+#bluetooth {
+    color: @color4;
+}
+
+#network {
+    color: @color6;
+}
+
+#pulseaudio {
+    color: @color5;
+}
+
+#cpu {
+    color: @color3;
+}
+
+#battery {
+    color: @color2;
+}
+
+#battery.warning {
+    color: @color3;
+}
+
+#battery.critical {
+    color: @color1;
+    animation: blink 1s linear infinite;
+}
+
+@keyframes blink {
+    to {
+        color: @foreground;
+    }
+}
+
+#custom-tray-icon {
+    color: @color8;
+    padding: 0 4px;
+}
+
+/* ---------------------------------------------------------------------------
+ * Tray expander children
+ * ----------------------------------------------------------------------- */
+
+.tray-child {
+    padding: 0 4px;
+}
