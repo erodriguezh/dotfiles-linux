@@ -1,0 +1,7 @@
+[Settings]
+gtk-application-prefer-dark-theme = true
+gtk-theme-name = Adwaita-dark
+gtk-icon-theme-name = Adwaita
+gtk-cursor-theme-name = Adwaita
+gtk-cursor-theme-size = 24
+gtk-font-name = JetBrainsMono Nerd Font 11
