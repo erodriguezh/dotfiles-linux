@@ -36,6 +36,11 @@ _THEME_OUTPUTS=(
 # Helpers (prefixed to avoid namespace collisions)
 # ---------------------------------------------------------------------------
 
+_theme_is_hex6() {
+    # Validate that a value is a 6-digit hex color (with or without #)
+    [[ "$1" =~ ^#?[0-9a-fA-F]{6}$ ]]
+}
+
 _theme_hex_to_rgb() {
     # Convert a hex color (with or without #) to decimal R,G,B
     # Usage: _theme_hex_to_rgb "#7aa2f7" -> "122,162,247"
@@ -73,7 +78,7 @@ _theme_parse_colors() {
     while IFS= read -r line; do
         # Skip comments and blank lines
         [[ "$line" =~ ^[[:space:]]*# ]] && continue
-        [[ -z "${line// /}" ]] && continue
+        [[ "$line" =~ ^[[:space:]]*$ ]] && continue
 
         # Parse key = "value" (TOML string format)
         if [[ "$line" =~ ^[[:space:]]*([a-zA-Z0-9_]+)[[:space:]]*=[[:space:]]*\"([^\"]+)\" ]]; then
@@ -92,11 +97,14 @@ _theme_parse_colors() {
             printf 's|{{ %s_strip }}|%s|g\n' "$key" "$escaped_stripped" >> "$sed_script"
 
             # Variant 3: {{ key_rgb }} -> decimal R,G,B (e.g. 122,162,247)
-            local rgb
-            rgb="$(_theme_hex_to_rgb "$val")"
-            local escaped_rgb
-            escaped_rgb="$(_theme_escape_sed "$rgb")"
-            printf 's|{{ %s_rgb }}|%s|g\n' "$key" "$escaped_rgb" >> "$sed_script"
+            # Only emit rgb variant for valid 6-digit hex colors
+            if _theme_is_hex6 "$val"; then
+                local rgb
+                rgb="$(_theme_hex_to_rgb "$val")"
+                local escaped_rgb
+                escaped_rgb="$(_theme_escape_sed "$rgb")"
+                printf 's|{{ %s_rgb }}|%s|g\n' "$key" "$escaped_rgb" >> "$sed_script"
+            fi
         fi
     done < "$colors_file"
 }
@@ -134,9 +142,10 @@ run_theme() {
 
     info "Parsing color palette from colors.toml..."
 
-    # Build sed script in a temp file
+    # Build sed script in a temp file (trap ensures cleanup on any exit path)
     local sed_script
     sed_script="$(mktemp /tmp/theme-sed.XXXXXX)"
+    trap 'rm -f "$sed_script"' RETURN
     _theme_parse_colors "$colors_file" "$sed_script"
 
     local count
@@ -155,7 +164,6 @@ run_theme() {
 
         if [[ ! -f "$tpl_path" ]]; then
             error "Template not found: ${tpl_path}"
-            rm -f "$sed_script"
             return 1
         fi
 
@@ -163,9 +171,6 @@ run_theme() {
         _theme_process_template "$tpl_path" "$output_path" "$sed_script"
         processed=$(( processed + 1 ))
     done
-
-    # Clean up temp file
-    rm -f "$sed_script"
 
     success "Theme engine complete: ${processed} config files generated"
 }
