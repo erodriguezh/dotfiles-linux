@@ -1,4 +1,4 @@
-# Surface Linux
+# Dotfiles Linux
 
 Idempotent Bash install script for **Fedora 43** on the **Surface Go 3** (Intel Pentium Gold 6500Y, 4 GB RAM, eMMC storage). Transforms a Minimal Install into a fully configured Hyprland 0.53+ desktop with Tokyo Night theming.
 
@@ -40,7 +40,7 @@ Open `kickstart/surface-go3.ks` and customize these values:
 
 1. **REPO_URL** (required) -- set to your clone of this repository:
    ```
-   REPO_URL="https://github.com/youruser/surface-linux.git"
+   REPO_URL="https://github.com/erodriguezh/dotfiles-linux.git"
    ```
 
 2. **Keyboard layout** (optional) -- defaults to German (`de`). Change if needed:
@@ -97,22 +97,14 @@ Use [Ventoy](https://www.ventoy.net/) to create a multiboot USB. Ventoy preserve
    inst.ks=hd:LABEL=Ventoy:/kickstart/surface-go3.ks
    ```
 
-#### Method C: Serve via HTTP (recommended)
+#### Method C: GitHub raw URL (recommended)
 
-Serve the kickstart file from another machine on the same network:
-
-```bash
-# On the serving machine, from the repo root
-cd kickstart
-python3 -m http.server 8080
-```
+If this repository is public on GitHub, point the installer directly at the raw file — no second USB or local server needed.
 
 Boot parameter:
 ```
-inst.ks=http://192.168.1.100:8080/surface-go3.ks
+inst.ks=https://raw.githubusercontent.com/erodriguezh/dotfiles-linux/main/kickstart/surface-go3.ks
 ```
-
-Replace `192.168.1.100` with the IP of the serving machine.
 
 ### Step 5: Boot and install
 
