@@ -1,0 +1,23 @@
+# tofi launcher configuration
+# Colors loaded from generated colors file
+
+# Appearance
+font = JetBrainsMono Nerd Font
+font-size = 14
+width = 50%
+height = 40%
+border-width = 2
+outline-width = 0
+corner-radius = 8
+padding-left = 20
+padding-top = 20
+result-spacing = 10
+
+# Behavior
+hide-cursor = true
+fuzzy-match = true
+num-results = 10
+prompt-text = " "
+
+# Colors (from generated file)
+include = ~/.config/tofi/colors

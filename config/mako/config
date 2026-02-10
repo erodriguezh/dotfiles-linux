@@ -1,0 +1,27 @@
+# mako notification daemon configuration
+# Colors loaded from generated colors file
+
+# General
+max-visible=5
+sort=-time
+default-timeout=10000
+layer=overlay
+anchor=top-right
+
+# Appearance
+font=JetBrainsMono Nerd Font 11
+width=350
+height=120
+margin=8
+padding=12
+border-size=2
+border-radius=8
+icons=1
+icon-path=/usr/share/icons/Adwaita
+
+# Actions
+on-button-left=dismiss
+on-button-right=dismiss-all
+
+# Colors (from generated file)
+include=~/.config/mako/colors

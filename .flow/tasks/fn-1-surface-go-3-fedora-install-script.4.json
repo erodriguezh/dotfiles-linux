@@ -1,0 +1,16 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-02-06T23:09:05.828881Z",
+  "depends_on": [
+    "fn-1-surface-go-3-fedora-install-script.1"
+  ],
+  "epic": "fn-1-surface-go-3-fedora-install-script",
+  "id": "fn-1-surface-go-3-fedora-install-script.4",
+  "priority": null,
+  "spec_path": ".flow/tasks/fn-1-surface-go-3-fedora-install-script.4.md",
+  "status": "todo",
+  "title": "System configuration: zram, network, getty, plymouth, and services",
+  "updated_at": "2026-02-08T08:36:32.357910Z"
+}
