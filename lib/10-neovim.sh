@@ -65,7 +65,15 @@ _neovim_bootstrap_lazy() {
 _neovim_sync_plugins() {
     # Run headless Neovim to install/sync all plugins.
     info "Running headless plugin sync (this may take a moment)..."
-    nvim --headless "+Lazy! sync" +qa 2>&1 || true
+
+    local sync_output
+    sync_output="$(nvim --headless "+Lazy! sync" +qa 2>&1)" || {
+        warn "Neovim headless plugin sync returned non-zero exit"
+        warn "Output: ${sync_output:-<empty>}"
+        warn "Plugins may need manual sync — run :Lazy sync inside Neovim"
+        return 0
+    }
+
     success "Neovim plugin sync complete"
 }
 
@@ -87,8 +95,12 @@ run_neovim() {
         return 1
     fi
 
-    # Check version compatibility
-    _neovim_check_version || true
+    # Check version compatibility — warn but don't block
+    # Fedora 43 ships Neovim >= 0.11.2; older versions may break LazyVim v15+
+    if ! _neovim_check_version; then
+        warn "Neovim version is below 0.11.2 — LazyVim may not work correctly"
+        warn "Consider: sudo dnf5 update neovim"
+    fi
 
     # Clone lazy.nvim if needed
     _neovim_bootstrap_lazy
