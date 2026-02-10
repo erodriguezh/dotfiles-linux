@@ -61,9 +61,8 @@ These filenames are referenced by static configs in Task 6 via `source`/`@import
 - [ ] Idempotent: re-running overwrites to same content
 
 ## Done summary
-
-_To be filled after implementation._
-
+Implemented the Omarchy-inspired theme engine with colors.toml (Tokyo Night 22-color palette), lib/09-theme.sh (template processor with hex_to_rgb, sed-based substitution generating 3 variants per key), and 8 .tpl template files producing themed configs for hyprland, waybar, ghostty, mako, tofi, hyprlock, gtk3, and gtk4.
 ## Evidence
-
-_To be filled after implementation._
+- Commits: 94ce352, ed2a086
+- Tests: bash: hex_to_rgb unit tests, bash: full run_theme integration test, bash: idempotency verification (md5 checksums)
+- PRs:

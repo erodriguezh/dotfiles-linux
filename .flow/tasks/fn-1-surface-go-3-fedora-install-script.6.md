@@ -76,9 +76,8 @@ Create all static application configuration files for Hyprland 0.53+ (split-by-c
 - [ ] Keybinds use `brightnessctl` for brightness and `playerctl` for media (packages in Task 2)
 
 ## Done summary
-
-_To be filled after implementation._
-
+Added all static application configuration files: Hyprland 0.53+ split-by-concern configs (8 files), companion app configs (waybar, mako, ghostty, tofi), hypridle/hyprlock/hyprpaper, Neovim/LazyVim bootstrap with Tokyo Night, clipboard helper script, and lib/10-neovim.sh installer stage with version checking and headless plugin sync.
 ## Evidence
-
-_To be filled after implementation._
+- Commits: 2654cbbcc7e15310ac76417a7c2fd9bdef28856f, 28303ba, b254232, 2335ed3
+- Tests: grep -r '#[0-9a-fA-F]{6}' config/ (no hardcoded colors), grep -r 'windowrulev2' config/ (zero matches), grep 'brightnessctl\|playerctl' config/hypr/keybinds.conf (confirmed)
+- PRs:

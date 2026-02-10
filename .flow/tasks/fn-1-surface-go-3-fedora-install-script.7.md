@@ -4,14 +4,15 @@ Create the dotfiles deployment script that symlinks config files from the repo t
 
 **Size:** M
 <!-- Updated by plan-sync: fn-1...1 added fonts stage at position 5, shifting subsequent lib file numbers by +1 -->
-**Files:** `lib/11-dotfiles.sh`, `config/bashrc.d/aliases.sh`, `scripts/clipboard-history.sh`
+<!-- Updated by plan-sync: fn-1...6 placed clipboard helper in config/local-bin/ not scripts/ -->
+**Files:** `lib/11-dotfiles.sh`, `config/bashrc.d/aliases.sh`
 
 ## Approach
 
 ### lib/11-dotfiles.sh (`run_dotfiles`)
 - Symlink all directories in `config/` to `~/.config/` using `ln -snf` (with `-n` to prevent nested symlinks)
 - Handle Neovim specially: symlink `config/nvim/` → `~/.config/nvim/`
-- Create `~/.local/bin/` and add helper scripts (clipboard history, screenshot)
+- Deploy helper scripts from `config/local-bin/` to `~/.local/bin/` (symlink each file, e.g. `config/local-bin/clipboard-history.sh` -> `~/.local/bin/clipboard-history.sh`)
 - Copy wallpapers from `assets/wallpapers/` → `~/.local/share/wallpapers/surface-linux/` (stable absolute paths for hyprpaper)
 - Deploy `.bashrc` additions:
   - Source all files from `~/.config/bashrc.d/*.sh` pattern (append sourcing loop to `.bashrc` if not present)
@@ -28,9 +29,11 @@ Create the dotfiles deployment script that symlinks config files from the repo t
 - `..` → `cd ..`
 - Other quality-of-life aliases
 
-### scripts/clipboard-history.sh
-- Helper for clipboard history keybind: `cliphist list | tofi | cliphist decode | wl-copy`
-- Made executable, symlinked to `~/.local/bin/`
+### config/local-bin/clipboard-history.sh (already created by Task 6)
+<!-- Updated by plan-sync: fn-1...6 created clipboard helper at config/local-bin/ not scripts/ -->
+- Already exists at `config/local-bin/clipboard-history.sh` (executable)
+- `lib/11-dotfiles.sh` must symlink it to `~/.local/bin/clipboard-history.sh`
+- Keybind in `config/hypr/keybinds.conf` references `~/.local/bin/clipboard-history.sh`
 
 ### Symlink mapping
 ```
