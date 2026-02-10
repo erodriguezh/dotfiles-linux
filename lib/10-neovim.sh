@@ -35,7 +35,7 @@ _neovim_check_version() {
             return 0
         else
             warn "Neovim ${major}.${minor}.${patch} is below ${min_major}.${min_minor}.${min_patch}"
-            warn "LazyVim v15.x requires Neovim >= 0.11.2 — consider pinning LazyVim to v14.x"
+            warn "LazyVim v15.x requires Neovim >= 0.11.2 — upgrade required"
             return 1
         fi
     else
