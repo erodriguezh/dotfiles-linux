@@ -20,32 +20,5 @@ run_kernel() {
         kernel-surface \
         libwacom-surface
 
-    # -- Ensure iwlwifi firmware for Surface kernel ----------------------------
-    # The surface kernel may request a newer iwlwifi firmware API version than
-    # the linux-firmware package provides. Fetch it from upstream if missing.
-    _kernel_ensure_iwlwifi_firmware
-
     success "Surface kernel and hardware packages installed"
-}
-
-# ---------------------------------------------------------------------------
-# Helpers (prefixed to avoid namespace collisions)
-# ---------------------------------------------------------------------------
-
-_kernel_ensure_iwlwifi_firmware() {
-    local fw_dir="/lib/firmware"
-    local fw_name="iwlwifi-cc-a0-77.ucode"
-
-    if [[ -f "${fw_dir}/${fw_name}" ]]; then
-        info "iwlwifi firmware ${fw_name} already present — skipping"
-        return 0
-    fi
-
-    local fw_url="https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain/${fw_name}"
-    info "Downloading missing iwlwifi firmware ${fw_name}..."
-    if sudo curl -fSLo "${fw_dir}/${fw_name}" "$fw_url"; then
-        success "iwlwifi firmware ${fw_name} installed"
-    else
-        warn "Failed to download ${fw_name} — WiFi may not work until firmware is available"
-    fi
 }

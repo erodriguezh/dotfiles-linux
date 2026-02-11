@@ -57,8 +57,8 @@ run_packages() {
         NetworkManager-wifi
         iwd
 
-        # Firmware (surface kernel may need newer iwlwifi ucode than base install)
-        linux-firmware
+        # WiFi firmware (Fedora splits iwlwifi into a separate subpackage)
+        iwlwifi-mvm-firmware
 
         # Keybind tools
         brightnessctl
