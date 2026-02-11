@@ -82,5 +82,30 @@ run_binaries() {
     local bluetui_url="https://github.com/pythops/bluetui/releases/download/v${bluetui_version}/bluetui-${arch}-linux-musl"
     _binaries_install "bluetui" "$bluetui_version" "$bluetui_url" "$local_bin"
 
+    # -- Starship (prompt) — not in Fedora repos ----------------------------
+    local starship_version="1.23.0"
+    local starship_url="https://github.com/starship/starship/releases/download/v${starship_version}/starship-${arch}-unknown-linux-musl.tar.gz"
+    if [[ -x "${local_bin}/starship" ]]; then
+        local current_version
+        current_version="$(${local_bin}/starship --version 2>&1 || true)"
+        if [[ "$current_version" == *"$starship_version"* ]]; then
+            info "starship v${starship_version} already installed — skipping"
+        fi
+    else
+        info "Downloading starship v${starship_version}..."
+        local tmp_dir
+        tmp_dir="$(mktemp -d)"
+        if curl -fSL "$starship_url" | tar xz -C "$tmp_dir"; then
+            chmod +x "${tmp_dir}/starship"
+            mv -f "${tmp_dir}/starship" "${local_bin}/starship"
+            success "starship v${starship_version} installed to ${local_bin}/starship"
+        else
+            error "Failed to download starship v${starship_version}"
+            rm -rf "$tmp_dir"
+            return 1
+        fi
+        rm -rf "$tmp_dir"
+    fi
+
     success "All pre-built binaries installed"
 }

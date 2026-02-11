@@ -74,8 +74,7 @@ run_packages() {
         neovim
         tree-sitter-cli
 
-        # Prompt
-        starship
+        # Prompt — starship installed in binaries stage (not in Fedora repos)
     )
 
     sudo "$DNF" install -y "${pkgs[@]}"
