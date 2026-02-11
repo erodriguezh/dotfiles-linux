@@ -100,7 +100,7 @@
         "tooltip-format-wifi": "{essid} ({signalStrength}%)\n{ipaddr}/{cidr}",
         "tooltip-format-ethernet": "{ifname}\n{ipaddr}/{cidr}",
         "tooltip-format-disconnected": "Disconnected",
-        "on-click": "ghostty -e impala"
+        "on-click": "ghostty -e nmtui"
     },
 
     "pulseaudio": {
