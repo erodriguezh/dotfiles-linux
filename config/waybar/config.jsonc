@@ -90,7 +90,7 @@
         "tooltip-format": "{controller_alias}\t{controller_address}",
         "tooltip-format-connected": "{controller_alias}\t{controller_address}\n\n{device_enumerate}",
         "tooltip-format-enumerate-connected": "{device_alias}\t{device_address}",
-        "on-click": "bluetui"
+        "on-click": "ghostty -e bluetui"
     },
 
     "network": {
@@ -100,7 +100,7 @@
         "tooltip-format-wifi": "{essid} ({signalStrength}%)\n{ipaddr}/{cidr}",
         "tooltip-format-ethernet": "{ifname}\n{ipaddr}/{cidr}",
         "tooltip-format-disconnected": "Disconnected",
-        "on-click": "impala"
+        "on-click": "ghostty -e impala"
     },
 
     "pulseaudio": {

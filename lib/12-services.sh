@@ -6,13 +6,13 @@
 # run_services — Enable required system services
 # ---------------------------------------------------------------------------
 # Note: iptsd.service is intentionally NOT enabled (touchscreen disabled).
-# Note: iwd.service is NOT manually enabled (NetworkManager manages it).
 
 run_services() {
     info "Enabling system services..."
 
     local -a services=(
         NetworkManager.service
+        iwd.service
         bluetooth.service
         tuned.service
         tuned-ppd.service
