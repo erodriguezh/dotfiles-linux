@@ -24,7 +24,7 @@ _THEME_TEMPLATES=(
 _THEME_OUTPUTS=(
     config/hypr/colors.conf
     config/waybar/colors.css
-    config/ghostty/theme
+    config/ghostty/themes/theme
     config/mako/colors
     config/tofi/colors
     config/hypr/hyprlock-colors.conf

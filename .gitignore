@@ -5,7 +5,7 @@
 config/hypr/colors.conf
 config/hypr/hyprlock-colors.conf
 config/waybar/colors.css
-config/ghostty/theme
+config/ghostty/themes/theme
 config/mako/colors
 config/tofi/colors
 config/gtk-3.0/settings.ini
