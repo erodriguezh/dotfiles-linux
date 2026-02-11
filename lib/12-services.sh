@@ -26,6 +26,17 @@ run_services() {
         fi
     done
 
+    # -- Set default target to graphical (required for uwsm check may-start) ---
+    local current_target
+    current_target="$(systemctl get-default)"
+    if [[ "$current_target" != "graphical.target" ]]; then
+        info "Setting default systemd target to graphical.target..."
+        sudo systemctl set-default graphical.target
+        success "Default target set to graphical.target"
+    else
+        info "Default target already graphical.target — skipping"
+    fi
+
     # -- Set tuned profile to powersave ---------------------------------------
     info "Setting tuned profile to 'powersave'..."
     if _services_find_cmd tuned-adm; then
