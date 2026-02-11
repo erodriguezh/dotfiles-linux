@@ -8,10 +8,10 @@
 #   - HTTPS URL for public repos (no auth needed)
 #   - Example: https://github.com/erodriguezh/dotfiles-linux.git
 #
-# Boot with one of:
-#   inst.ks=hd:LABEL=KICKSTART:/surface-go3.ks        (second USB drive)
-#   inst.ks=hd:LABEL=Ventoy:/kickstart/surface-go3.ks  (Ventoy USB)
-#   inst.ks=https://raw.githubusercontent.com/erodriguezh/dotfiles-linux/main/kickstart/surface-go3.ks  (GitHub raw URL)
+# Boot with one of (WiFi-only devices must use A or B):
+#   A) inst.ks=hd:LABEL=Ventoy:/kickstart/surface-go3.ks  (Ventoy USB — recommended)
+#   B) inst.ks=hd:LABEL=KICKSTART:/surface-go3.ks         (second USB drive)
+#   C) inst.ks=https://raw.githubusercontent.com/erodriguezh/dotfiles-linux/main/kickstart/surface-go3.ks  (wired only)
 
 # ============================================================================
 # Installation settings
@@ -86,12 +86,16 @@ git
 
 %pre
 #!/bin/bash
-set -Eeuo pipefail
 
-# Bind stdin/stdout to a TTY so prompts are visible in Anaconda
-TTY="/dev/tty1"
-[[ ! -e "$TTY" && -e /dev/tty3 ]] && TTY="/dev/tty3"
-exec <"$TTY" >"$TTY" 2>&1
+# Try to bind stdin/stdout to a visible TTY (must happen BEFORE strict mode)
+for tty in /dev/tty1 /dev/tty3 /dev/console; do
+    if [[ -r "$tty" && -w "$tty" ]]; then
+        exec <"$tty" >"$tty" 2>&1
+        break
+    fi
+done
+
+set -Eeuo pipefail
 
 echo ""
 echo "============================================"

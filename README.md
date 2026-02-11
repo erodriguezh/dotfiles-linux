@@ -27,17 +27,17 @@ Download the **Fedora 43 Everything** (netinstall) ISO from the [Fedora download
 
 ### Step 2: Write the ISO to USB
 
-Use `dd`, Fedora Media Writer, or Rufus (Windows):
+Use `dd` to write the ISO to USB, or Fedora Media Writer / Rufus (Windows) if you prefer a GUI.
 
+**macOS** (replace `diskX` with your device — use `diskutil list` to find it):
 ```bash
-# Linux / macOS — replace /dev/sdX with your USB device
-sudo dd if=Fedora-Everything-netinst-x86_64-43-*.iso of=/dev/sdX bs=4M status=progress oflag=sync
+diskutil unmountDisk /dev/diskX
+sudo dd if=Fedora-Everything-netinst-x86_64-43-*.iso of=/dev/rdiskX bs=4m status=progress
 ```
 
-MacOS - Find the USB path executing
-
+**Linux** (replace `/dev/sdX` with your device — use `lsblk` to find it):
 ```bash
-diskutil list
+sudo dd if=Fedora-Everything-netinst-x86_64-43-*.iso of=/dev/sdX bs=4M status=progress oflag=sync
 ```
 
 ### Step 3: Edit the Kickstart file
@@ -63,27 +63,11 @@ Note: The keyboard layout affects the `%pre` password prompt. Make sure you know
 
 ### Step 4: Make the Kickstart available
 
-Choose one of three methods:
+Choose one of the methods below.
 
-#### Method A: Second USB drive
+**WiFi-only devices** (like the Surface Go 3) must use Method A or B. Network URLs (Method C) require a wired connection because WiFi authentication cannot happen before the kickstart file is fetched.
 
-Format a second USB stick as FAT32 with the label `KICKSTART`, then copy the kickstart file to it:
-
-```bash
-# Format and label a second USB (replace /dev/sdY with your device)
-sudo mkfs.vfat -n KICKSTART /dev/sdY1
-sudo mkdir -p /mnt/ks
-sudo mount /dev/sdY1 /mnt/ks
-sudo cp kickstart/surface-go3.ks /mnt/ks/surface-go3.ks
-sudo umount /mnt/ks
-```
-
-Insert both USB drives (installer + kickstart) and boot. Boot parameter:
-```
-inst.ks=hd:LABEL=KICKSTART:/surface-go3.ks
-```
-
-#### Method B: Ventoy (single USB)
+#### Method A: Ventoy (recommended — single USB)
 
 Use [Ventoy](https://www.ventoy.net/) to create a multiboot USB. Ventoy preserves a data partition where you can place the kickstart file alongside ISO images.
 
@@ -103,9 +87,33 @@ Use [Ventoy](https://www.ventoy.net/) to create a multiboot USB. Ventoy preserve
    inst.ks=hd:LABEL=Ventoy:/kickstart/surface-go3.ks
    ```
 
-#### Method C: GitHub raw URL (recommended)
+#### Method B: Second USB drive
 
-If this repository is public on GitHub, point the installer directly at the raw file — no second USB or local server needed.
+Format a second USB stick (or SD card) as FAT32 with the label `KICKSTART`, then copy the kickstart file to it.
+
+**macOS** (replace `disk9` with your device — use `diskutil list` to find it):
+```bash
+diskutil eraseDisk FAT32 KICKSTART MBRFormat /dev/disk9
+cp kickstart/surface-go3.ks /Volumes/KICKSTART/
+```
+
+**Linux** (replace `/dev/sdY` with your device):
+```bash
+sudo mkfs.vfat -n KICKSTART /dev/sdY1
+sudo mkdir -p /mnt/ks
+sudo mount /dev/sdY1 /mnt/ks
+sudo cp kickstart/surface-go3.ks /mnt/ks/surface-go3.ks
+sudo umount /mnt/ks
+```
+
+Insert both USB drives and boot (use a USB-C hub if the device has only one port). Boot parameter:
+```
+inst.ks=hd:LABEL=KICKSTART:/surface-go3.ks
+```
+
+#### Method C: GitHub raw URL (wired connection only)
+
+If the device has ethernet (or a USB-C ethernet adapter), point the installer directly at the raw file — no second USB needed.
 
 Boot parameter:
 ```
