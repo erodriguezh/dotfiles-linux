@@ -68,6 +68,7 @@ run_packages() {
         curl
         jq
         git
+        tar
         unzip
 
         # Neovim + deps
