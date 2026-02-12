@@ -81,7 +81,23 @@ Issues encountered during the first real install on Surface Go 3 hardware. All h
 **Error:** `Can't get kickstart from /dev/ventoy:/kickstart/surface-go3.ks`
 **Root cause:** Ventoy creates a virtual `/dev/ventoy` block device for ISO passthrough. Anaconda's BusyBox-based initrd can't open it — `LABEL=Ventoy` resolves to this virtual device rather than the actual data partition.
 **Workaround:** Used `mkksiso` to embed the kickstart into the ISO itself, then copied the custom ISO to Ventoy. Required `--platform linux/amd64` on Apple Silicon and `--skip-mkefiboot` inside Docker (no loop device access).
-**Resolution:** Abandoned kickstart for first install; did manual Anaconda install instead due to interactive `%pre` script TTY issues with embedded kickstart.
+**Resolution:** Use OEMDRV partition on Ventoy USB. Anaconda has hardcoded logic to scan all attached block devices for a volume labeled `OEMDRV`. If found, it loads `ks.cfg` from the root — no `inst.ks=` boot parameter needed.
+
+```bash
+# Install Ventoy with reserved space (16 MB is more than enough)
+sudo sh Ventoy2Disk.sh -i -r 16 /dev/sdX
+
+# Create OEMDRV partition in the reserved space
+sudo mkfs.ext4 -L 'OEMDRV' /dev/sdXN
+
+# Copy kickstart file (MUST be named ks.cfg)
+sudo mount /dev/sdXN /mnt
+sudo cp surface-go3.ks /mnt/ks.cfg
+sudo umount /mnt
+```
+
+**Why it works:** Bypasses Ventoy's `/dev/ventoy` device entirely. Anaconda natively scans for `OEMDRV` label. No boot parameter editing needed. Works with WiFi-only devices. Multiple independent repos confirm it works ([cuintle/fedora-minimal-installation](https://github.com/cuintle/fedora-minimal-installation), [foundata/kickstart-templates](https://github.com/foundata/kickstart-templates), [RHEL 7 Installation Guide 26.2.5](https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/7/html/installation_guide/sect-kickstart-howto)).
+**Caveat:** Anaconda may `dd` the OEMDRV partition during install, destroying it. Recreate after install if reuse is needed. The kickstart **must** protect the USB drive with `ignoredisk --only-use=mmcblk0` to prevent `clearpart --all` from wiping it.
 
 ### Kickstart %pre TTY failure with embedded ISO
 
