@@ -25,20 +25,30 @@ Idempotent Bash install script for **Fedora 43** on the **Surface Go 3** (Intel 
 
 Download the **Fedora 43 Everything** (netinstall) ISO from the [Fedora download page](https://fedoraproject.org/everything/download). This is a minimal network installer that pulls packages during installation.
 
-### Step 2: Write the ISO to USB
+### Step 2: Prepare the USB drive with Ventoy
 
-Use `dd` to write the ISO to USB, or Fedora Media Writer / Rufus (Windows) if you prefer a GUI.
+Use [Ventoy](https://www.ventoy.net/) to create a multiboot USB with a reserved OEMDRV partition for the kickstart file. Anaconda has hardcoded logic to scan for a volume labeled `OEMDRV` and auto-load `ks.cfg` from it — no boot parameter editing needed.
 
-**macOS** (replace `diskX` with your device — use `diskutil list` to find it):
 ```bash
-diskutil unmountDisk /dev/diskX
-sudo dd if=Fedora-Everything-netinst-x86_64-43-*.iso of=/dev/rdiskX bs=4m status=progress
+# Install Ventoy with 16 MB reserved space at end of disk
+sudo sh Ventoy2Disk.sh -i -r 16 /dev/sdX
+
+# Create the OEMDRV partition in the reserved space (use GNOME Disks or CLI)
+sudo mkfs.ext4 -L 'OEMDRV' /dev/sdXN
+
+# Copy the kickstart file (MUST be named ks.cfg)
+sudo mkdir -p /mnt/oemdrv
+sudo mount /dev/sdXN /mnt/oemdrv
+sudo cp kickstart/surface-go3.ks /mnt/oemdrv/ks.cfg
+sudo umount /mnt/oemdrv
+
+# Copy the Fedora Everything ISO to the Ventoy data partition
+sudo mount /dev/sdX1 /mnt/usb
+sudo cp Fedora-Everything-netinst-x86_64-43-*.iso /mnt/usb/
+sudo umount /mnt/usb
 ```
 
-**Linux** (replace `/dev/sdX` with your device — use `lsblk` to find it):
-```bash
-sudo dd if=Fedora-Everything-netinst-x86_64-43-*.iso of=/dev/sdX bs=4M status=progress oflag=sync
-```
+**Note:** Anaconda may overwrite the OEMDRV partition during install. Recreate it after install if you need to reuse it. The kickstart's `ignoredisk --only-use=mmcblk0` protects the USB drive from `clearpart --all`.
 
 ### Step 3: Edit the Kickstart file
 
@@ -61,33 +71,11 @@ Open `kickstart/surface-go3.ks` and customize these values:
 
 Note: The keyboard layout affects the `%pre` password prompt. Make sure you know which layout is active when typing your password to avoid lockout.
 
-### Step 4: Make the Kickstart available
+### Step 4: Alternative kickstart delivery methods
 
-Choose one of the methods below.
+Step 2 covers the recommended OEMDRV approach. These alternatives exist if OEMDRV is not an option.
 
-**WiFi-only devices** (like the Surface Go 3) must use Method A or B. Network URLs (Method C) require a wired connection because WiFi authentication cannot happen before the kickstart file is fetched.
-
-#### Method A: Ventoy (recommended — single USB)
-
-Use [Ventoy](https://www.ventoy.net/) to create a multiboot USB. Ventoy preserves a data partition where you can place the kickstart file alongside ISO images.
-
-1. Install Ventoy on your USB drive (this creates a `Ventoy` data partition).
-2. Copy the Fedora Everything ISO to the Ventoy partition.
-3. Create a `kickstart/` folder on the Ventoy partition and copy the kickstart file:
-   ```bash
-   # Mount the Ventoy data partition (it is typically labeled "Ventoy")
-   sudo mkdir -p /mnt/usb
-   sudo mount /dev/disk/by-label/Ventoy /mnt/usb
-   sudo mkdir -p /mnt/usb/kickstart
-   sudo cp kickstart/surface-go3.ks /mnt/usb/kickstart/
-   sudo umount /mnt/usb
-   ```
-4. Boot from USB, select the Fedora ISO in Ventoy, then edit the boot entry to add:
-   ```
-   inst.ks=hd:LABEL=Ventoy:/kickstart/surface-go3.ks
-   ```
-
-#### Method B: Second USB drive
+#### Method A: Second USB drive
 
 Format a second USB stick (or SD card) as FAT32 with the label `KICKSTART`, then copy the kickstart file to it.
 
@@ -111,7 +99,7 @@ Insert both USB drives and boot (use a USB-C hub if the device has only one port
 inst.ks=hd:LABEL=KICKSTART:/surface-go3.ks
 ```
 
-#### Method C: GitHub raw URL (wired connection only)
+#### Method B: GitHub raw URL (wired connection only)
 
 If the device has ethernet (or a USB-C ethernet adapter), point the installer directly at the raw file — no second USB needed.
 
@@ -124,14 +112,13 @@ inst.ks=https://raw.githubusercontent.com/erodriguezh/dotfiles-linux/main/kickst
 
 1. Insert the USB into the Surface Go 3.
 2. Power on while holding **Volume Down** to boot from USB.
-3. At the GRUB boot menu, press **`e`** to edit the boot entry.
-4. Append the `inst.ks=...` parameter to the `linuxefi` line (before any `quiet` option).
-5. Press **Ctrl+X** to boot.
-6. Anaconda will start in text mode:
+3. Select the Fedora Everything ISO in the Ventoy menu.
+4. Anaconda auto-detects the OEMDRV partition and loads `ks.cfg` — no boot parameter editing needed. (If using an alternative method from Step 4, press **`e`** at the GRUB menu to append `inst.ks=...` to the `linuxefi` line, then **Ctrl+X** to boot.)
+5. Anaconda will start in text mode:
    - **Connect to WiFi** when prompted (the Everything ISO needs network access).
    - You will be prompted for a **username** and **password** for your user account.
    - Installation proceeds automatically: partitions the eMMC, installs Minimal Install, creates your user (with sudo via wheel group), clones this repo.
-7. The system reboots automatically when done.
+6. The system reboots automatically when done.
 
 ### What the Kickstart does
 

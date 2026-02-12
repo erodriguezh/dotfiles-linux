@@ -8,9 +8,10 @@
 #   - HTTPS URL for public repos (no auth needed)
 #   - Example: https://github.com/erodriguezh/dotfiles-linux.git
 #
-# Boot with one of (WiFi-only devices must use A or B):
-#   A) inst.ks=hd:LABEL=Ventoy:/kickstart/surface-go3.ks  (Ventoy USB — recommended)
-#   B) inst.ks=hd:LABEL=KICKSTART:/surface-go3.ks         (second USB drive)
+# Boot methods (WiFi-only devices must use A or B):
+#   A) OEMDRV partition on Ventoy USB (recommended — single USB, no boot params)
+#      Anaconda auto-detects a partition labeled OEMDRV and loads ks.cfg from it.
+#   B) inst.ks=hd:LABEL=KICKSTART:/surface-go3.ks  (second USB drive)
 #   C) inst.ks=https://raw.githubusercontent.com/erodriguezh/dotfiles-linux/main/kickstart/surface-go3.ks  (wired only)
 
 # ============================================================================
