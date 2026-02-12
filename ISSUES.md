@@ -94,3 +94,35 @@ Issues encountered during the first real install on Surface Go 3 hardware. All h
 **Error:** No wifi device in `nmcli device status`
 **Root cause:** Fedora Minimal Install does not include `linux-firmware`, which provides the Marvell 88W8897 WiFi firmware for Surface Go 3.
 **Resolution:** Connected via USB tethering, ran `sudo dnf install linux-firmware`, rebooted. Consider adding `linux-firmware` to the kickstart `%packages` section.
+
+## Issue 10: Missing iwlwifi firmware — no WiFi adapter
+
+**Stage:** packages
+**Error:** `ip link` only shows `lo`. `dmesg | grep iwlwifi`: `Direct firmware load for iwlwifi-cc-a0-77.ucode failed with error -2` / `no suitable firmware found!`
+**Root cause:** Fedora splits iwlwifi firmware into a separate subpackage (`iwlwifi-mvm-firmware`). The base `linux-firmware` package does not include it. Surface kernel 6.18.8 requires `iwlwifi-cc-a0-77.ucode` for the Intel Wi-Fi 6 AX200.
+**Fix:** Replaced `linux-firmware` with `iwlwifi-mvm-firmware` in `lib/03-packages.sh`.
+**Commit:** `d770f3a`
+
+## Issue 11: iwd.service not enabled — impala reports "No adapter found"
+
+**Stage:** services
+**Error:** `impala` → `Can not access the iwd service: No adapter found`
+**Root cause:** `lib/12-services.sh` did not enable `iwd.service`, assuming NetworkManager would auto-start it. NM does not — iwd must be explicitly enabled.
+**Fix:** Added `iwd.service` to the enabled services list in `lib/12-services.sh`.
+**Commit:** `7927cb4`
+
+## Issue 12: Waybar on-click TUI apps fail silently
+
+**Stage:** N/A (runtime)
+**Error:** Clicking WiFi/Bluetooth icons in Waybar does nothing — no terminal appears.
+**Root cause:** `on-click` in Waybar executes commands directly. TUI apps (impala, bluetui) need a terminal emulator to render. Running them without one fails silently.
+**Fix:** Wrapped on-click commands in `ghostty -e` (e.g., `"on-click": "ghostty -e nmtui"`).
+**Commit:** `7927cb4`
+
+## Issue 13: impala incompatible with NetworkManager iwd backend
+
+**Stage:** N/A (runtime)
+**Error:** Selecting a WiFi network in impala and entering the password → `operation aborted`
+**Root cause:** impala talks to iwd's D-Bus API directly. When iwd runs as a NetworkManager backend (`wifi.backend=iwd`), NM controls connections through iwd and iwd rejects direct connection attempts from other clients.
+**Fix:** Replaced impala with `nmtui` (NetworkManager's built-in TUI) for the Waybar network on-click action.
+**Commit:** `41f4c41`
