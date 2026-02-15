@@ -52,24 +52,37 @@ sudo umount /mnt/usb
 
 ### Step 3: Edit the Kickstart file
 
-Open `kickstart/surface-go3.ks` and customize these values:
+Open `kickstart/surface-go3.ks` and set the required values. The file has `CHANGEME_*` placeholders that **must** be replaced — the install aborts if any remain.
 
-1. **REPO_URL** (required) -- set to your clone of this repository:
+1. **User account** (required) -- replace the placeholder in the `user` directive:
+   ```
+   user --name=edu --groups=wheel --password=$6$rounds=... --iscrypted
+   ```
+   Generate the password hash beforehand:
+   ```bash
+   openssl passwd -6
+   # or: python3 -c "import crypt; print(crypt.crypt('mypass', crypt.mksalt(crypt.METHOD_SHA512)))"
+   ```
+
+2. **USERNAME in %post** (required) -- must match the `--name=` value above:
+   ```
+   USERNAME="edu"
+   ```
+
+3. **REPO_URL in %post** (required) -- set to your clone of this repository:
    ```
    REPO_URL="https://github.com/erodriguezh/dotfiles-linux.git"
    ```
 
-2. **Keyboard layout** (optional) -- defaults to German (`de`). Change if needed:
+4. **Keyboard layout** (optional) -- defaults to German (`de`). Change if needed:
    ```
    keyboard --xlayouts='us'
    ```
 
-3. **Timezone** (optional) -- defaults to `Europe/Vienna`. Change if needed:
+5. **Timezone** (optional) -- defaults to `Europe/Vienna`. Change if needed:
    ```
    timezone America/New_York --utc
    ```
-
-Note: The keyboard layout affects the `%pre` password prompt. Make sure you know which layout is active when typing your password to avoid lockout.
 
 ### Step 4: Alternative kickstart delivery methods
 
@@ -116,8 +129,7 @@ inst.ks=https://raw.githubusercontent.com/erodriguezh/dotfiles-linux/main/kickst
 4. Anaconda auto-detects the OEMDRV partition and loads `ks.cfg` — no boot parameter editing needed. (If using an alternative method from Step 4, press **`e`** at the GRUB menu to append `inst.ks=...` to the `linuxefi` line, then **Ctrl+X** to boot.)
 5. Anaconda will start in text mode:
    - **Connect to WiFi** when prompted (the Everything ISO needs network access).
-   - You will be prompted for a **username** and **password** for your user account.
-   - Installation proceeds automatically: partitions the eMMC, installs Minimal Install, creates your user (with sudo via wheel group), clones this repo.
+   - Installation proceeds fully automatically: partitions the eMMC, installs Minimal Install, creates your user (with sudo via wheel group), clones this repo.
 6. The system reboots automatically when done.
 
 ### What the Kickstart does

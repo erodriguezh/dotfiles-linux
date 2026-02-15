@@ -103,7 +103,7 @@ sudo umount /mnt
 
 **Error:** `Unable to open input kickstart file: [Errno 2] No such file or directory: '/tmp/user-include'`
 **Root cause:** The interactive `%pre` script (username/password prompt) can't acquire a TTY when the kickstart is baked into the ISO via mkksiso. The `read` commands fail silently, `/tmp/user-include` is never created.
-**Resolution:** Manual Anaconda install. The kickstart's interactive `%pre` approach needs rethinking for embedded ISO delivery — consider hardcoding a default username or using a non-interactive approach.
+**Resolution:** Dropped interactive `%pre` entirely — see **Issue 14** for the full fix.
 
 ### Missing WiFi firmware after Minimal Install
 
@@ -142,3 +142,13 @@ sudo umount /mnt
 **Root cause:** impala talks to iwd's D-Bus API directly. When iwd runs as a NetworkManager backend (`wifi.backend=iwd`), NM controls connections through iwd and iwd rejects direct connection attempts from other clients.
 **Fix:** Replaced impala with `nmtui` (NetworkManager's built-in TUI) for the Waybar network on-click action.
 **Commit:** `41f4c41`
+
+## Issue 14: Kickstart %pre interactive prompt fails with embedded ISO / OEMDRV
+
+**Stage:** kickstart (%pre)
+**Error:** `Unable to open input kickstart file: [Errno 2] No such file or directory: '/tmp/user-include'`
+**Root cause:** The interactive `%pre` script prompts for username/password via `read` on a TTY. Modern Anaconda isolates %pre in a tmux session where stdin may not be connected to a visible TTY — especially when the kickstart is delivered via mkksiso (embedded ISO) or OEMDRV partition. The `read` commands fail silently, `/tmp/user-include` is never created, and Anaconda aborts on the `%include` directive.
+**Why interactive %pre is a dead end:** Anaconda's tmux isolation, the Wayland WebUI migration, and Ventoy's virtual block device all make interactive `%pre` scripts increasingly fragile. Community consensus treats interactive kickstart prompts as an anti-pattern.
+**Fix:** Dropped the interactive `%pre` entirely. Replaced it with a static `user --name=... --groups=wheel --password=... --iscrypted` directive using pre-generated SHA-512 password hash. Username is also hardcoded in `%post --nochroot` instead of being read from `/tmp/ks-username`. Both values use `CHANGEME_*` placeholders with a guard that aborts if not edited before use.
+**Hash generation:** `openssl passwd -6` or `python3 -c "import crypt; print(crypt.crypt('pw', crypt.mksalt(crypt.METHOD_SHA512)))"`
+**Trade-off:** Credentials must be set before each install (no runtime prompt). This is acceptable — the kickstart is already device-specific (`ignoredisk --only-use=mmcblk0`) and must be edited for `REPO_URL` anyway.
