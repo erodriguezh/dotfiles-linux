@@ -1,8 +1,9 @@
 # .github/workflows/build-iso.yml — CI pipeline for Surface Linux ISO builds
 #
 # Validates the ISO build pipeline (RPM download + repo creation + repoclosure)
-# on every push/PR touching relevant paths. Optionally produces a downloadable
-# ISO artifact or GitHub Release via manual dispatch.
+# on every push/PR touching relevant paths. On manual dispatch, setting either
+# upload_artifact or create_release to true triggers a full ISO build with test
+# credentials; otherwise only validation runs.
 
 name: Build ISO
 
@@ -79,19 +80,26 @@ jobs:
 
       # ----------------------------------------------------------------
       # Step 4: Cache boot ISO
-      # Rarely changes; keyed on a static string.
+      # Rarely changes; only needed when building a full ISO.
       # ----------------------------------------------------------------
       - name: Cache boot ISO
-        if: github.event_name == 'workflow_dispatch' && inputs.upload_artifact
+        if: github.event_name == 'workflow_dispatch' && (inputs.upload_artifact || inputs.create_release)
         uses: actions/cache@v4
         with:
           path: .cache/isos
           key: fedora43-boot-iso
 
       # ----------------------------------------------------------------
-      # Step 5: Verify Podman
-      # ubuntu-latest ships Podman; verify availability.
+      # Step 5: Install and verify Podman
+      # Use rootful sudo podman for --privileged support in the build
+      # container. Installed explicitly since runner image may not
+      # include it.
       # ----------------------------------------------------------------
+      - name: Install Podman
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq podman
+
       - name: Verify Podman
         run: podman --version
 
@@ -103,12 +111,13 @@ jobs:
 
       # ----------------------------------------------------------------
       # Step 7: Run build (validate mode)
-      # For push/PR: validates minimal-environment expansion, RPM
-      # download, repo creation, and repoclosure check. Skips boot.iso
-      # download, asset downloads, theme generation, and mkksiso.
+      # For push/PR (and dispatch with both flags false): validates
+      # minimal-environment expansion, RPM download, repo creation,
+      # and repoclosure check. Skips boot.iso download, asset
+      # downloads, theme generation, and mkksiso assembly.
       # ----------------------------------------------------------------
       - name: Validate ISO build pipeline
-        if: github.event_name != 'workflow_dispatch' || !inputs.upload_artifact
+        if: github.event_name != 'workflow_dispatch' || (!inputs.upload_artifact && !inputs.create_release)
         run: |
           # Ensure cache directory exists and is writable
           mkdir -p .cache/rpms
@@ -120,11 +129,12 @@ jobs:
 
       # ----------------------------------------------------------------
       # Step 8: Run build (full, on dispatch)
-      # Produces actual ISO with test credentials. Only runs when
-      # manually triggered with upload_artifact=true.
+      # Produces actual ISO with test credentials. Runs on
+      # workflow_dispatch when either upload_artifact or
+      # create_release is true.
       # ----------------------------------------------------------------
       - name: Build full ISO
-        if: github.event_name == 'workflow_dispatch' && inputs.upload_artifact
+        if: github.event_name == 'workflow_dispatch' && (inputs.upload_artifact || inputs.create_release)
         run: |
           # Ensure cache directories exist and are writable
           mkdir -p .cache/rpms .cache/isos
