@@ -5,7 +5,7 @@
 # Usage:
 #   ./iso/build-iso.sh --username=edu --password-hash-file=/tmp/hash.txt
 #   ./iso/build-iso.sh --test            # dummy credentials for dev builds
-#   ./iso/build-iso.sh --validate-only   # dry run: repo download + repoclosure, no ISO
+#   ./iso/build-iso.sh --validate-only   # dry run: RPM download + repo + repoclosure only
 #
 # Credential priority (first match wins):
 #   1. --password-hash-file=PATH   (recommended — avoids shell history)
@@ -74,6 +74,7 @@ trap '_err_handler ${LINENO} "${BASH_COMMAND}" $?' ERR
 # ---------------------------------------------------------------------------
 
 usage() {
+    local exit_code="${1:-0}"
     cat <<'USAGE'
 Usage: build-iso.sh [OPTIONS]
 
@@ -84,9 +85,9 @@ Options:
   --password-hash-file=PATH  Read password hash from file (recommended)
   --password-hash=HASH       Password hash directly (WARNING: leaks to shell history)
   --test                     Use dummy credentials for dev builds
-  --validate-only            Dry run: download + repo + repoclosure, skip mkksiso
+  --validate-only            Dry run: RPM download + repo creation + repoclosure only
   --boot-iso=PATH            Path to Fedora boot.iso (auto-downloads if not provided)
-  --output-dir=PATH          Output directory (default: ./output/)
+  --output-dir=PATH          Output directory (default: /build/output/)
   -h, --help                 Show this help
 
 Environment:
@@ -94,7 +95,7 @@ Environment:
 
 Credential priority: --password-hash-file > ISO_PASSWORD_HASH > --password-hash
 USAGE
-    exit 0
+    exit "$exit_code"
 }
 
 # ---------------------------------------------------------------------------
@@ -125,7 +126,7 @@ parse_args() {
             -h|--help)        usage ;;
             *)
                 error "Unknown option: $1"
-                usage
+                usage 1
                 ;;
         esac
         shift
@@ -521,22 +522,28 @@ stage_download_binaries() {
     local starship_version="1.23.0"
     local arch="x86_64"
 
-    # Impala
+    # Impala — download to temp file, atomically move on success
     local impala_url="https://github.com/pythops/impala/releases/download/v${impala_version}/impala-${arch}-unknown-linux-musl"
-    if [[ ! -f "${bin_dir}/impala" ]]; then
+    if [[ ! -x "${bin_dir}/impala" ]]; then
         info "Downloading impala v${impala_version}..."
-        curl -fSL "$impala_url" -o "${bin_dir}/impala"
-        chmod +x "${bin_dir}/impala"
+        local tmp_impala
+        tmp_impala="$(mktemp "${bin_dir}/impala.tmp.XXXXXX")"
+        curl -fSL "$impala_url" -o "$tmp_impala"
+        chmod +x "$tmp_impala"
+        mv -f "$tmp_impala" "${bin_dir}/impala"
     else
         info "impala already cached"
     fi
 
-    # bluetui
+    # bluetui — download to temp file, atomically move on success
     local bluetui_url="https://github.com/pythops/bluetui/releases/download/v${bluetui_version}/bluetui-${arch}-linux-musl"
-    if [[ ! -f "${bin_dir}/bluetui" ]]; then
+    if [[ ! -x "${bin_dir}/bluetui" ]]; then
         info "Downloading bluetui v${bluetui_version}..."
-        curl -fSL "$bluetui_url" -o "${bin_dir}/bluetui"
-        chmod +x "${bin_dir}/bluetui"
+        local tmp_bluetui
+        tmp_bluetui="$(mktemp "${bin_dir}/bluetui.tmp.XXXXXX")"
+        curl -fSL "$bluetui_url" -o "$tmp_bluetui"
+        chmod +x "$tmp_bluetui"
+        mv -f "$tmp_bluetui" "${bin_dir}/bluetui"
     else
         info "bluetui already cached"
     fi
@@ -847,11 +854,6 @@ main() {
     info "Cache dir:     $CACHE_DIR"
     echo ""
 
-    # Stage 1: Download boot.iso (skip in validate-only)
-    if [[ "$VALIDATE_ONLY" != true ]]; then
-        stage_download_boot_iso
-    fi
-
     # Stage 2: Expand @^minimal-environment
     stage_expand_minimal_env
 
@@ -867,6 +869,15 @@ main() {
     # Stage 5: Validate repo (repoclosure)
     stage_validate_repo
 
+    # In validate-only mode, stop after repo validation (stages 2-5)
+    if [[ "$VALIDATE_ONLY" == true ]]; then
+        success "Validation complete. Repo download and dependency closure verified."
+        return
+    fi
+
+    # Stage 1: Download boot.iso
+    stage_download_boot_iso
+
     # Stage 6: Download binaries
     stage_download_binaries
 
@@ -878,12 +889,6 @@ main() {
 
     # Stage 9: Copy surface-linux repo + generate theme
     stage_prepare_repo
-
-    # Skip ISO assembly stages in validate-only mode
-    if [[ "$VALIDATE_ONLY" == true ]]; then
-        success "Validation complete. All stages passed (ISO assembly skipped)."
-        return
-    fi
 
     # Stage 10: Substitute credentials
     stage_substitute_credentials

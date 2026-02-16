@@ -12,6 +12,7 @@ RUN dnf5 install -y \
         lorax \
         createrepo_c \
         dnf5-plugins \
+        curl \
         git \
         jq \
         xorriso \
