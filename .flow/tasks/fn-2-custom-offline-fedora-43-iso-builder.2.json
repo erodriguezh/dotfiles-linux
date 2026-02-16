@@ -1,0 +1,16 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-02-16T08:56:42.209125Z",
+  "depends_on": [
+    "fn-2-custom-offline-fedora-43-iso-builder.1"
+  ],
+  "epic": "fn-2-custom-offline-fedora-43-iso-builder",
+  "id": "fn-2-custom-offline-fedora-43-iso-builder.2",
+  "priority": null,
+  "spec_path": ".flow/tasks/fn-2-custom-offline-fedora-43-iso-builder.2.md",
+  "status": "todo",
+  "title": "Create ISO kickstart with embedded repo and %post config",
+  "updated_at": "2026-02-16T09:12:10.172771Z"
+}
