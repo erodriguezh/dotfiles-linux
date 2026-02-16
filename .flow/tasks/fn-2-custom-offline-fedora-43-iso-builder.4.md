@@ -69,3 +69,11 @@ Developer documentation for the ISO build system:
 - Commit message style from recent history: `fix(waybar):`, `docs: switch to OEMDRV`, `docs(issues):`.
 - The Stages table and dependencies section still applies — stages are what install.sh does, and after an ISO install the user can still run individual stages.
 - `kickstart/surface-go3.ks` inline comments should get a brief "see also: `iso/surface-go3-iso.ks` for the custom ISO kickstart" note.
+
+## Done summary
+
+_To be filled on completion._
+
+## Evidence
+
+_To be filled on completion._
