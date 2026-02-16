@@ -82,5 +82,8 @@ These paths are in the workspace mount (not container `/tmp/`), so GitHub Action
 - CI builds with real credentials should only happen via workflow_dispatch with repository secrets.
 
 ## Done summary
-
+Added GitHub Actions workflow (.github/workflows/build-iso.yml) that validates the ISO build pipeline on push/PR via --validate-only mode and optionally produces a full ISO artifact or GitHub Release via manual dispatch with test credentials.
 ## Evidence
+- Commits: 93e81962e33a10d6e500e6f6a23f3b7bfefb5e10, 44aa38167f233f22df61b571c28c0e98d7076e60
+- Tests: python3 -c 'import yaml; yaml.safe_load(...)' (YAML validation)
+- PRs:
