@@ -37,7 +37,8 @@ Add a GitHub Actions workflow that validates the ISO build pipeline on every pus
 
 6. **Build container** — `sudo podman build -t surface-iso-builder iso/`
 
-7. **Run build (validate mode)** — For push/PR: `sudo podman run --privileged --rm -v ${{ github.workspace }}:/build surface-iso-builder /build/iso/build-iso.sh --test --validate-only`. This validates package download, repo creation, repoclosure check, asset download, but skips mkksiso assembly. Note: NO `:Z` suffix on volume mount (not needed on ubuntu-latest, causes warnings).
+7. **Run build (validate mode)** — For push/PR: `sudo podman run --privileged --rm -v ${{ github.workspace }}:/build surface-iso-builder /build/iso/build-iso.sh --test --validate-only`. This validates minimal-environment expansion, RPM download, repo creation, and repoclosure check, but skips boot.iso download, asset downloads (binaries, fonts, lazy.nvim), theme generation, and mkksiso assembly. Note: NO `:Z` suffix on volume mount (not needed on ubuntu-latest, causes warnings).
+<!-- Updated by plan-sync: fn-2-custom-offline-fedora-43-iso-builder.1 validate-only stops after stage 5 (repoclosure), not after asset downloads -->
 
 8. **Run build (full, on dispatch)** — When `workflow_dispatch` with `upload_artifact=true`: run full build with `--test` credentials. Produces actual ISO.
 
@@ -50,9 +51,10 @@ Add a GitHub Actions workflow that validates the ISO build pipeline on every pus
 ### Repoclosure validation in CI
 
 The validate-only mode MUST include an automated correctness check (from task .1's `--validate-only` behavior):
-- Spin up a nested container with only the local repo
-- Verify `dnf5 install --assumeno` can resolve ALL packages + `@^minimal-environment` without external repos
+- The build script's `stage_validate_repo()` runs `dnf5 --setopt=reposdir=/dev/null --setopt=local-only.baseurl=file://<rpm-cache> install --assumeno --repo=local-only <all-pkgs>` inline (no nested container needed)
+- This verifies `dnf5 install --assumeno` can resolve ALL expanded packages without external repos
 - This goes beyond "dnf5 download succeeded" — it proves the repo is self-contained
+<!-- Updated by plan-sync: fn-2-custom-offline-fedora-43-iso-builder.1 uses inline dnf5 --setopt repoclosure, not a nested container -->
 
 ### Permissions
 ```yaml
