@@ -71,9 +71,8 @@ Developer documentation for the ISO build system:
 - `kickstart/surface-go3.ks` inline comments should get a brief "see also: `iso/surface-go3-iso.ks` for the custom ISO kickstart" note.
 
 ## Done summary
-
-_To be filled on completion._
-
+Restructured README.md with dual install paths (Path A: manual kickstart, Path B: custom ISO) including comparison table, and created iso/README.md with comprehensive build system developer documentation covering architecture, credential handling, build stages, CI workflow, customization, troubleshooting, and security. Added cross-reference from kickstart/surface-go3.ks to the ISO kickstart.
 ## Evidence
-
-_To be filled on completion._
+- Commits: a9f6e67, 38ba8b3139ef804d2fdf186caf95c7bfb9a207db
+- Tests: manual review of documentation accuracy against build-iso.sh and kickstart files
+- PRs:
