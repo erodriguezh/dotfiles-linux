@@ -77,6 +77,14 @@ The kickstart has 5 sections: header, %packages, %post --nochroot, %post (chroot
 - Kickstart `services` directive: comma-separated, NO spaces between service names. Use canonical systemd unit names only.
 - `tuned-ppd` is a package, not a service unit. Include in `%packages`, not in `services --enabled=`.
 
+## Acceptance
+
+- [x] ISO kickstart uses embedded local repo via `repo --baseurl=file:///run/install/isodir/local-repo`
+- [x] %post --nochroot copies repo, binaries, fonts, lazy.nvim to installed system
+- [x] %post chroot mirrors all lib/ stage configurations
+- [x] `@@USERNAME@@` and `@@PASSWORD_HASH@@` placeholders used for build-time substitution
+- [x] RepoPrompt review: SHIP
+
 ## Done summary
 Created ISO-specific kickstart file (iso/surface-go3-iso.ks) with embedded local repo directive, full package set from lib/*.sh, %post --nochroot asset copy (repo, binaries, fonts, lazy.nvim), and %post chroot configuration mirroring all lib/ stages (zram, network, getty, XDG portals, UWSM, dotfiles, services, plymouth, COPR repos). Repo configuration is best-effort for offline install safety.
 ## Evidence

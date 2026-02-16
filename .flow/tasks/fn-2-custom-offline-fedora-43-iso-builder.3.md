@@ -81,6 +81,15 @@ These paths are in the workspace mount (not container `/tmp/`), so GitHub Action
 - Workflow should NOT embed real credentials. Always use `--test` for CI builds.
 - CI builds with real credentials should only happen via workflow_dispatch with repository secrets.
 
+## Acceptance
+
+- [x] Workflow triggers on push/PR for relevant paths
+- [x] `--validate-only` mode runs on push/PR (repoclosure check)
+- [x] Full build with `--test` runs on manual dispatch
+- [x] RPM and boot ISO caching configured
+- [x] Optional artifact upload and GitHub Release creation
+- [x] YAML validates successfully
+
 ## Done summary
 Added GitHub Actions workflow (.github/workflows/build-iso.yml) that validates the ISO build pipeline on push/PR via --validate-only mode and optionally produces a full ISO artifact or GitHub Release via manual dispatch with test credentials.
 ## Evidence

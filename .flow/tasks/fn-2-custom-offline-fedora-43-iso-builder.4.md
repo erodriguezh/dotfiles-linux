@@ -70,6 +70,14 @@ Developer documentation for the ISO build system:
 - The Stages table and dependencies section still applies — stages are what install.sh does, and after an ISO install the user can still run individual stages.
 - `kickstart/surface-go3.ks` inline comments should get a brief "see also: `iso/surface-go3-iso.ks` for the custom ISO kickstart" note.
 
+## Acceptance
+
+- [x] README.md restructured with dual install paths and comparison table
+- [x] `iso/README.md` created with build system developer documentation
+- [x] Cross-reference added to `kickstart/surface-go3.ks`
+- [x] Documentation accurately reflects build-iso.sh and kickstart behavior
+- [x] RepoPrompt review: SHIP
+
 ## Done summary
 Restructured README.md with dual install paths (Path A: manual kickstart, Path B: custom ISO) including comparison table, and created iso/README.md with comprehensive build system developer documentation covering architecture, credential handling, build stages, CI workflow, customization, troubleshooting, and security. Added cross-reference from kickstart/surface-go3.ks to the ISO kickstart.
 ## Evidence
