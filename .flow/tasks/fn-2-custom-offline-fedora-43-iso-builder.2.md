@@ -76,3 +76,7 @@ The kickstart has 5 sections: header, %packages, %post --nochroot, %post (chroot
 - `@@USERNAME@@` and `@@PASSWORD_HASH@@` are build-time substitution placeholders (distinct from existing kickstart's `CHANGEME_*` pattern).
 - Kickstart `services` directive: comma-separated, NO spaces between service names. Use canonical systemd unit names only.
 - `tuned-ppd` is a package, not a service unit. Include in `%packages`, not in `services --enabled=`.
+
+## Done summary
+
+## Evidence
