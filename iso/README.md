@@ -10,20 +10,24 @@ The ISO build system produces a single bootable ISO (~1.5 GB) that contains all 
 ┌─────────────────────────────────────────────────────────┐
 │ BUILD (Podman container, Fedora 43)                      │
 │                                                          │
-│ 1. Enable repos: official + 3 COPRs + linux-surface      │
-│ 2. Expand @^minimal-environment to package list          │
-│ 3. dnf5 download --resolve to local RPM cache            │
-│ 4. createrepo_c to build repo metadata                   │
-│ 5. repoclosure validation                                │
-│ 6. Download: impala, bluetui, starship, JetBrains Mono   │
-│ 7. git clone lazy.nvim (stable branch)                   │
-│ 8. Copy surface-linux repo + generate theme files        │
-│ 9. Substitute credentials in kickstart template          │
-│ 10. mkksiso: embed ks + repo + assets into boot.iso      │
+│ Containerfile: enables repos (3 COPRs + linux-surface)   │
+│                                                          │
+│ build-iso.sh (runs inside the container):                │
+│  1. Expand @^minimal-environment to package list         │
+│  2. dnf5 download --resolve to local RPM cache           │
+│  3. createrepo_c to build repo metadata                  │
+│  4. repoclosure validation                               │
+│  5. Download: impala, bluetui, starship, JetBrains Mono  │
+│  6. git clone lazy.nvim (stable branch)                  │
+│  7. Copy surface-linux repo + generate theme files       │
+│  8. Substitute credentials in kickstart template         │
+│  9. mkksiso: embed ks + repo + assets into boot.iso      │
 │                                                          │
 │ Output: surface-linux-F43-YYYYMMDD-x86_64.iso (~1.5 GB)  │
 └─────────────────────────────────────────────────────────┘
 ```
+
+Repo enablement (COPRs + linux-surface) is done in `iso/Containerfile`; `build-iso.sh` assumes those repos are already available inside the container.
 
 ## Prerequisites
 
@@ -32,6 +36,21 @@ The ISO build system produces a single bootable ISO (~1.5 GB) that contains all 
 - Network access (for downloading packages, boot.iso, and assets during build)
 
 ## Usage
+
+All `build-iso.sh` commands below must run **inside** the Fedora 43 build container. From the host, invoke them via Podman:
+
+```bash
+# Build the container image (once)
+podman build -t surface-iso-builder iso/
+
+# Run build-iso.sh inside the container (mount repo at /build)
+podman run --privileged --rm \
+  -v "$PWD:/build" \
+  surface-iso-builder \
+  /build/iso/build-iso.sh [OPTIONS]
+```
+
+If you are already inside the builder container (e.g., during development), run `./iso/build-iso.sh [OPTIONS]` directly.
 
 ### Credential input methods
 
@@ -144,7 +163,9 @@ The ISO uses `iso/surface-go3-iso.ks` (separate from `kickstart/surface-go3.ks` 
 The CI workflow (`.github/workflows/build-iso.yml`) runs on every push and PR:
 
 - **Validation job:** Builds the container, runs `--validate-only` to verify repo completeness
-- **Manual dispatch:** Supports `workflow_dispatch` to trigger a full ISO build with test credentials, uploaded as a GitHub Actions artifact
+- **Manual dispatch (`workflow_dispatch`):**
+  - `upload_artifact: true` -- builds a full ISO with test credentials and uploads it as a workflow artifact
+  - `create_release: true` -- builds a full ISO with test credentials and publishes it as a GitHub Release (with checksum)
 
 CI builds always use `--test` mode with dummy credentials. The workflow uses `jlumbroso/free-disk-space` to reclaim runner disk space before building.
 

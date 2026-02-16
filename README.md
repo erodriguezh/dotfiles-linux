@@ -191,18 +191,27 @@ This path builds a self-contained ISO with all packages, binaries, fonts, and co
 ### Option 1: Build the ISO locally
 
 ```bash
+# Build the container image (once)
+podman build -t surface-iso-builder iso/
+
 # Generate a password hash (do NOT use a plaintext password)
 openssl passwd -6 > /tmp/hash.txt
 
-# Build the ISO (runs in a Podman container)
-./iso/build-iso.sh --username=edu --password-hash-file=/tmp/hash.txt
+# Build the ISO inside the container
+podman run --privileged --rm \
+  -v "$PWD:/build" \
+  surface-iso-builder \
+  /build/iso/build-iso.sh --username=edu --password-hash-file=/tmp/hash.txt
 ```
 
 The ISO is written to `output/surface-linux-F43-YYYYMMDD-x86_64.iso` (~1.5 GB).
 
 For development builds with dummy credentials:
 ```bash
-./iso/build-iso.sh --test
+podman run --privileged --rm \
+  -v "$PWD:/build" \
+  surface-iso-builder \
+  /build/iso/build-iso.sh --test
 ```
 
 See [iso/README.md](iso/README.md) for build details, credential options, and troubleshooting.
@@ -257,14 +266,18 @@ All stages are idempotent -- they converge to the same end-state whether assets 
 # Skip multiple stages
 ./install.sh --skip kernel --skip theme
 
-# Build custom ISO (Path B)
-./iso/build-iso.sh --username=edu --password-hash-file=/tmp/hash.txt
+# Build custom ISO (Path B — requires Podman; see Path B section above)
+podman build -t surface-iso-builder iso/
+podman run --privileged --rm -v "$PWD:/build" \
+  surface-iso-builder /build/iso/build-iso.sh --username=edu --password-hash-file=/tmp/hash.txt
 
 # Build ISO with test credentials
-./iso/build-iso.sh --test
+podman run --privileged --rm -v "$PWD:/build" \
+  surface-iso-builder /build/iso/build-iso.sh --test
 
 # Validate ISO repo completeness (no ISO produced)
-./iso/build-iso.sh --validate-only
+podman run --privileged --rm -v "$PWD:/build" \
+  surface-iso-builder /build/iso/build-iso.sh --validate-only
 ```
 
 ## Stages
