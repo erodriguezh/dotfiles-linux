@@ -1,0 +1,181 @@
+# .github/workflows/build-iso.yml — CI pipeline for Surface Linux ISO builds
+#
+# Validates the ISO build pipeline (RPM download + repo creation + repoclosure)
+# on every push/PR touching relevant paths. Optionally produces a downloadable
+# ISO artifact or GitHub Release via manual dispatch.
+
+name: Build ISO
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "iso/**"
+      - "lib/**"
+      - "kickstart/**"
+      - "config/**"
+      - "templates/**"
+      - "colors.toml"
+
+  pull_request:
+    paths:
+      - "iso/**"
+      - "lib/**"
+      - "kickstart/**"
+      - "config/**"
+      - "templates/**"
+      - "colors.toml"
+
+  workflow_dispatch:
+    inputs:
+      upload_artifact:
+        description: "Upload ISO as workflow artifact"
+        type: boolean
+        default: false
+      create_release:
+        description: "Create GitHub Release with ISO"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write  # needed for release creation
+
+jobs:
+  build-iso:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      # ----------------------------------------------------------------
+      # Step 1: Free disk space (~30 GB reclaimed)
+      # Must run BEFORE checkout to maximize available space.
+      # ----------------------------------------------------------------
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          tool-cache: false
+          swap-storage: true
+
+      # ----------------------------------------------------------------
+      # Step 2: Checkout repository
+      # ----------------------------------------------------------------
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ----------------------------------------------------------------
+      # Step 3: Cache RPM repo
+      # Key changes when package lists change, forcing re-download.
+      # ----------------------------------------------------------------
+      - name: Cache RPM repo
+        uses: actions/cache@v4
+        with:
+          path: .cache/rpms
+          key: fedora43-rpms-${{ hashFiles('lib/03-packages.sh', 'lib/02-kernel.sh') }}
+
+      # ----------------------------------------------------------------
+      # Step 4: Cache boot ISO
+      # Rarely changes; keyed on a static string.
+      # ----------------------------------------------------------------
+      - name: Cache boot ISO
+        if: github.event_name == 'workflow_dispatch' && inputs.upload_artifact
+        uses: actions/cache@v4
+        with:
+          path: .cache/isos
+          key: fedora43-boot-iso
+
+      # ----------------------------------------------------------------
+      # Step 5: Verify Podman
+      # ubuntu-latest ships Podman; verify availability.
+      # ----------------------------------------------------------------
+      - name: Verify Podman
+        run: podman --version
+
+      # ----------------------------------------------------------------
+      # Step 6: Build container image
+      # ----------------------------------------------------------------
+      - name: Build container
+        run: sudo podman build -t surface-iso-builder iso/
+
+      # ----------------------------------------------------------------
+      # Step 7: Run build (validate mode)
+      # For push/PR: validates minimal-environment expansion, RPM
+      # download, repo creation, and repoclosure check. Skips boot.iso
+      # download, asset downloads, theme generation, and mkksiso.
+      # ----------------------------------------------------------------
+      - name: Validate ISO build pipeline
+        if: github.event_name != 'workflow_dispatch' || !inputs.upload_artifact
+        run: |
+          # Ensure cache directory exists and is writable
+          mkdir -p .cache/rpms
+
+          sudo podman run --privileged --rm \
+            -v "${{ github.workspace }}:/build" \
+            surface-iso-builder \
+            /build/iso/build-iso.sh --validate-only
+
+      # ----------------------------------------------------------------
+      # Step 8: Run build (full, on dispatch)
+      # Produces actual ISO with test credentials. Only runs when
+      # manually triggered with upload_artifact=true.
+      # ----------------------------------------------------------------
+      - name: Build full ISO
+        if: github.event_name == 'workflow_dispatch' && inputs.upload_artifact
+        run: |
+          # Ensure cache directories exist and are writable
+          mkdir -p .cache/rpms .cache/isos
+
+          sudo podman run --privileged --rm \
+            -v "${{ github.workspace }}:/build" \
+            surface-iso-builder \
+            /build/iso/build-iso.sh --test
+
+      # ----------------------------------------------------------------
+      # Step 9: Report disk usage
+      # ----------------------------------------------------------------
+      - name: Report disk usage
+        if: always()
+        run: df -h
+
+      # ----------------------------------------------------------------
+      # Step 10: Upload artifact
+      # Conditional on dispatch input. compression-level: 0 because
+      # ISO files are already compressed.
+      # ----------------------------------------------------------------
+      - name: Upload ISO artifact
+        if: github.event_name == 'workflow_dispatch' && inputs.upload_artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: surface-linux-iso
+          path: |
+            output/surface-linux-F43-*.iso
+            output/surface-linux-F43-*.iso.sha256
+          compression-level: 0
+          retention-days: 7
+
+      # ----------------------------------------------------------------
+      # Step 11: Create GitHub Release
+      # Conditional on dispatch input. Generates SHA256 checksum and
+      # attaches both the ISO and checksum to the release.
+      # ----------------------------------------------------------------
+      - name: Create release
+        if: github.event_name == 'workflow_dispatch' && inputs.create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: iso-${{ github.run_number }}-${{ github.run_attempt }}
+          name: Surface Linux ISO (Build ${{ github.run_number }})
+          body: |
+            Automated ISO build from workflow dispatch.
+
+            **Commit:** ${{ github.sha }}
+            **Branch:** ${{ github.ref_name }}
+
+            This ISO uses test credentials and is intended for development/testing only.
+          files: |
+            output/surface-linux-F43-*.iso
+            output/surface-linux-F43-*.iso.sha256
+          fail_on_unmatched_files: true
