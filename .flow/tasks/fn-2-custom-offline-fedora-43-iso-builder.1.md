@@ -104,3 +104,5 @@ Parse `lib/03-packages.sh` to extract the `pkgs=()` array contents. Use grep/sed
 - Theme engine outputs are `.gitignored` (`.gitignore:5-11`). They MUST be generated during build.
 - Shell conventions: `set -Eeuo pipefail`, `shopt -s inherit_errexit`, `readonly` for constants, `info()`/`warn()`/`error()` color helpers.
 - Cache directory pattern: `/build/.cache/` maps to `${REPO_ROOT}/.cache/` on host, enabling GitHub Actions caching.
+
+## Done summary
