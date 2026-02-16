@@ -1,0 +1,30 @@
+# iso/Containerfile — Build environment for the Surface Linux offline ISO
+#
+# Contains ONLY build tools (lorax/mkksiso, createrepo_c, etc.).
+# Target runtime packages (hyprland, ghostty, kernel-surface, ...) are
+# deliberately NOT installed here so that `dnf5 download --resolve` correctly
+# captures all transitive dependencies.
+
+FROM registry.fedoraproject.org/fedora:43
+
+# -- Build tools only ---------------------------------------------------------
+RUN dnf5 install -y \
+        lorax \
+        createrepo_c \
+        dnf5-plugins \
+        git \
+        jq \
+        xorriso \
+        isomd5sum \
+    && dnf5 clean all
+
+# -- Enable COPR repositories ------------------------------------------------
+RUN dnf5 copr enable -y sdegler/hyprland \
+    && dnf5 copr enable -y scottames/ghostty \
+    && dnf5 copr enable -y alternateved/tofi
+
+# -- Add linux-surface external repo -----------------------------------------
+RUN dnf5 config-manager addrepo \
+        --from-repofile=https://pkg.surfacelinux.com/fedora/linux-surface.repo
+
+WORKDIR /build
