@@ -100,9 +100,8 @@ The broken `--setopt` block must be replaced with two complementary checks using
 - [ ] iso/README.md overview list and troubleshooting updated if they reference old --setopt approach
 - [ ] `--validate-only` mode completes successfully in build container
 ## Done summary
-TBD
-
+Replaced broken dnf5 --setopt ad-hoc repo creation in stage_validate_repo() with --repofrompath, implementing dual validation (repoclosure for structural integrity + install --assumeno with explicit exit-code handling for completeness). Updated iso/README.md overview diagram, stage 5 description, and troubleshooting section.
 ## Evidence
-- Commits:
-- Tests:
+- Commits: 251484190d41e1e3c850ca17fe4b76d03e0d505f
+- Tests: shellcheck iso/build-iso.sh (not available locally — validated via RP code review)
 - PRs:
