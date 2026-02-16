@@ -4,6 +4,9 @@
 # Creates a user account with pre-hashed credentials, installs a minimal
 # system, and bootstraps the surface-linux repo for post-install.
 #
+# See also: iso/surface-go3-iso.ks for the custom ISO kickstart (offline
+# install path with all packages and configuration embedded).
+#
 # BEFORE USE:
 #   1. Set USERNAME and PASSWORD_HASH below (see "User account" section)
 #   2. Edit REPO_URL in %post to point to your clone of this repository

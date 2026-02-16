@@ -13,13 +13,30 @@ Idempotent Bash install script for **Fedora 43** on the **Surface Go 3** (Intel 
 | Display | 10.5" 1920x1280 (~220 PPI), 1.5x scaling |
 | Kernel | linux-surface (from linux-surface repo) |
 
+## Installation
+
+Two paths to the same result -- a fully configured Hyprland desktop:
+
+| | Path A: Manual (Kickstart + install.sh) | Path B: Custom ISO |
+|---|---|---|
+| Network during install | Required (downloads packages) | Not required (all packages embedded) |
+| Manual steps after boot | Run `./install.sh`, reboot | None (reboot to Hyprland) |
+| Total reboots | 3 (USB boot, post-kickstart, post-install.sh) | 2 (USB boot, post-install) |
+| Build step | None | Run `build-iso.sh` once (requires Podman) |
+| Credentials | Edit kickstart placeholders | Injected at ISO build time |
+
+After either path, `install.sh` still works for re-running individual stages (`--only fonts`, `--only theme`, etc.).
+
 ## Prerequisites
 
 - **Secure Boot disabled** in UEFI firmware settings (hold Volume Up during boot to enter UEFI). Alternatively, you can enroll linux-surface keys after install using `surface-secureboot`, but disabling is simpler.
 - A USB flash drive (4 GB minimum).
-- A network connection (the Everything ISO downloads packages during install).
 
-## USB Preparation
+## Path A: Manual Installation (Kickstart + install.sh)
+
+This path uses the stock Fedora Everything ISO with a kickstart file to bootstrap a Minimal Install, then runs `install.sh` to configure the full desktop.
+
+**Additional prerequisite:** A network connection (the Everything ISO downloads packages during install).
 
 ### Step 1: Download the Fedora Everything ISO
 
@@ -27,7 +44,7 @@ Download the **Fedora 43 Everything** (netinstall) ISO from the [Fedora download
 
 ### Step 2: Prepare the USB drive with Ventoy
 
-Use [Ventoy](https://www.ventoy.net/) to create a multiboot USB with a reserved OEMDRV partition for the kickstart file. Anaconda has hardcoded logic to scan for a volume labeled `OEMDRV` and auto-load `ks.cfg` from it — no boot parameter editing needed.
+Use [Ventoy](https://www.ventoy.net/) to create a multiboot USB with a reserved OEMDRV partition for the kickstart file. Anaconda has hardcoded logic to scan for a volume labeled `OEMDRV` and auto-load `ks.cfg` from it -- no boot parameter editing needed.
 
 ```bash
 # Install Ventoy with 16 MB reserved space at end of disk
@@ -52,7 +69,7 @@ sudo umount /mnt/usb
 
 ### Step 3: Edit the Kickstart file
 
-Open `kickstart/surface-go3.ks` and set the required values. The file has `CHANGEME_*` placeholders that **must** be replaced — the install aborts if any remain.
+Open `kickstart/surface-go3.ks` and set the required values. The file has `CHANGEME_*` placeholders that **must** be replaced -- the install aborts if any remain.
 
 1. **User account** (required) -- replace the placeholder in the `user` directive:
    ```
@@ -92,7 +109,7 @@ Step 2 covers the recommended OEMDRV approach. These alternatives exist if OEMDR
 
 Format a second USB stick (or SD card) as FAT32 with the label `KICKSTART`, then copy the kickstart file to it.
 
-**macOS** (replace `disk9` with your device — use `diskutil list` to find it):
+**macOS** (replace `disk9` with your device -- use `diskutil list` to find it):
 ```bash
 diskutil eraseDisk FAT32 KICKSTART MBRFormat /dev/disk9
 cp kickstart/surface-go3.ks /Volumes/KICKSTART/
@@ -114,7 +131,7 @@ inst.ks=hd:LABEL=KICKSTART:/surface-go3.ks
 
 #### Method B: GitHub raw URL (wired connection only)
 
-If the device has ethernet (or a USB-C ethernet adapter), point the installer directly at the raw file — no second USB needed.
+If the device has ethernet (or a USB-C ethernet adapter), point the installer directly at the raw file -- no second USB needed.
 
 Boot parameter:
 ```
@@ -126,7 +143,7 @@ inst.ks=https://raw.githubusercontent.com/erodriguezh/dotfiles-linux/main/kickst
 1. Insert the USB into the Surface Go 3.
 2. Power on while holding **Volume Down** to boot from USB.
 3. Select the Fedora Everything ISO in the Ventoy menu.
-4. Anaconda auto-detects the OEMDRV partition and loads `ks.cfg` — no boot parameter editing needed. (If using an alternative method from Step 4, press **`e`** at the GRUB menu to append `inst.ks=...` to the `linuxefi` line, then **Ctrl+X** to boot.)
+4. Anaconda auto-detects the OEMDRV partition and loads `ks.cfg` -- no boot parameter editing needed. (If using an alternative method from Step 4, press **`e`** at the GRUB menu to append `inst.ks=...` to the `linuxefi` line, then **Ctrl+X** to boot.)
 5. Anaconda will start in text mode:
    - **Connect to WiFi** when prompted (the Everything ISO needs network access).
    - Installation proceeds fully automatically: partitions the eMMC, installs Minimal Install, creates your user (with sudo via wheel group), clones this repo.
@@ -142,7 +159,7 @@ inst.ks=https://raw.githubusercontent.com/erodriguezh/dotfiles-linux/main/kickst
 - Installs Fedora 43 Minimal Install + `sudo` + `git`
 - Clones this repository to `~/surface-linux`
 
-## Post-Install
+### Post-Install
 
 After the system reboots from the Kickstart install:
 
@@ -165,10 +182,67 @@ sudo reboot
 
 **Important:** Run `install.sh` as your normal user, NOT as root. The script uses `sudo` internally for operations that require elevated privileges.
 
+## Path B: Custom ISO Installation
+
+This path builds a self-contained ISO with all packages, binaries, fonts, and configuration embedded. The Surface Go 3 installs fully offline -- boot from USB, reboot, and Hyprland is ready.
+
+**Prerequisites:** Podman (for building the ISO), or download a pre-built ISO from GitHub Releases.
+
+### Option 1: Build the ISO locally
+
+```bash
+# Generate a password hash (do NOT use a plaintext password)
+openssl passwd -6 > /tmp/hash.txt
+
+# Build the ISO (runs in a Podman container)
+./iso/build-iso.sh --username=edu --password-hash-file=/tmp/hash.txt
+```
+
+The ISO is written to `output/surface-linux-F43-YYYYMMDD-x86_64.iso` (~1.5 GB).
+
+For development builds with dummy credentials:
+```bash
+./iso/build-iso.sh --test
+```
+
+See [iso/README.md](iso/README.md) for build details, credential options, and troubleshooting.
+
+### Option 2: Download from GitHub Releases
+
+CI-built ISOs use dummy credentials and are intended for testing only. Never use a public ISO with real credentials.
+
+### Flash and boot
+
+```bash
+# Flash the ISO to a USB drive
+sudo dd if=output/surface-linux-F43-*.iso of=/dev/sdX bs=4M status=progress
+```
+
+1. Insert the USB into the Surface Go 3.
+2. Power on while holding **Volume Down** to boot from USB.
+3. Anaconda starts in text mode and installs fully automatically (no network needed).
+4. The system shuts down when done. Remove the USB and power on.
+5. Hyprland starts automatically via UWSM with Tokyo Night theming.
+
+**Note:** First `nvim` launch needs WiFi -- lazy.nvim auto-syncs plugins on startup.
+
+### After ISO install
+
+The `install.sh` script is still available at `~/surface-linux/install.sh` and works for re-running individual stages:
+
+```bash
+./install.sh --list            # show all stages
+./install.sh --only fonts      # re-run just the fonts stage
+./install.sh --only theme      # regenerate theme files
+./install.sh --only dotfiles   # re-symlink config files
+```
+
+All stages are idempotent -- they converge to the same end-state whether assets were pre-seeded by the ISO or downloaded fresh.
+
 ## Quick Reference
 
 ```bash
-# Full install (all stages)
+# Full install (all stages, Path A only)
 ./install.sh
 
 # List all available stages
@@ -182,6 +256,15 @@ sudo reboot
 
 # Skip multiple stages
 ./install.sh --skip kernel --skip theme
+
+# Build custom ISO (Path B)
+./iso/build-iso.sh --username=edu --password-hash-file=/tmp/hash.txt
+
+# Build ISO with test credentials
+./iso/build-iso.sh --test
+
+# Validate ISO repo completeness (no ISO produced)
+./iso/build-iso.sh --validate-only
 ```
 
 ## Stages
@@ -251,3 +334,4 @@ The install script logs all output to `/tmp/surface-install.log` (in addition to
 - [alternateved/tofi COPR](https://copr.fedorainfracloud.org/coprs/alternateved/tofi/)
 - [LazyVim](https://www.lazyvim.org/)
 - [UWSM](https://github.com/Vladimir-csp/uwsm)
+- [mkksiso documentation](https://weldr.io/lorax/mkksiso.html)
