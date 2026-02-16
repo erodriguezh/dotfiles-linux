@@ -106,3 +106,5 @@ Parse `lib/03-packages.sh` to extract the `pkgs=()` array contents. Use grep/sed
 - Cache directory pattern: `/build/.cache/` maps to `${REPO_ROOT}/.cache/` on host, enabling GitHub Actions caching.
 
 ## Done summary
+
+## Evidence
