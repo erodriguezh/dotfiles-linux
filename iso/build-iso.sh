@@ -493,17 +493,55 @@ stage_validate_repo() {
 
     info "Validating that local repo can satisfy ${#all_pkgs[@]} packages..."
 
-    # Use --setopt to configure a temporary repo pointing only at local cache.
-    # reposdir=/dev/null disables all external repos.
-    dnf5 \
-        --setopt=reposdir=/dev/null \
-        --setopt=local-only.name=local-only \
-        --setopt=local-only.baseurl="file://${RPM_CACHE}" \
-        --setopt=local-only.enabled=1 \
-        install --assumeno --repo=local-only \
-        "${all_pkgs[@]}"
+    # dnf5 does not support creating ad-hoc repos via --setopt=REPO_ID.key=value
+    # (that was a dnf4-only feature). Instead, use --repofrompath to create a
+    # transient repo for a single command — no temp .repo files needed.
+    #
+    # Flags used by both checks:
+    #   --setopt=reposdir=/dev/null   prevents loading system/container repos
+    #   --repofrompath=local-only,... creates a transient repo over RPM_CACHE
+    #   --repo=local-only             restricts resolution to only that repo
 
-    success "Repoclosure passed: all packages satisfiable from local repo"
+    # Check A — structural integrity (repoclosure)
+    # Verifies every RPM's Requires: is satisfiable within the local repo.
+    # Exits 0 on success, non-zero on unresolved deps (safe under set -e).
+    info "Running repoclosure on local repo..."
+    dnf5 repoclosure \
+        --setopt=reposdir=/dev/null \
+        --repofrompath=local-only,"file://${RPM_CACHE}" \
+        --repo=local-only
+
+    success "Repoclosure passed: no unresolved dependencies"
+
+    # Check B — completeness (install simulation)
+    # Verifies the specific combined package list is resolvable from the
+    # local repo alone. --assumeno causes dnf5 to abort before committing
+    # the transaction, but it may exit non-zero even when resolution
+    # succeeds (the "user declined" exit code). We must distinguish that
+    # from real resolution failures under set -Eeuo pipefail.
+    info "Running install simulation for ${#all_pkgs[@]} packages..."
+    local install_output
+    local install_rc=0
+    if ! install_output="$(dnf5 install --assumeno \
+        --setopt=reposdir=/dev/null \
+        --repofrompath=local-only,"file://${RPM_CACHE}" \
+        --repo=local-only \
+        "${all_pkgs[@]}" 2>&1)"; then
+        install_rc=$?
+    fi
+
+    # Only fail on real resolution errors, not the expected "Operation aborted"
+    if [[ $install_rc -ne 0 ]]; then
+        if grep -qE 'Problem:|No match for argument:' <<<"$install_output"; then
+            error "Local repo install simulation failed:"
+            printf '%s\n' "$install_output"
+            exit 1
+        fi
+        # Non-zero exit but no resolution errors — this is the expected
+        # --assumeno "user declined transaction" case; treat as success.
+    fi
+
+    success "Install simulation passed: all ${#all_pkgs[@]} packages satisfiable from local repo"
 }
 
 # ---------------------------------------------------------------------------

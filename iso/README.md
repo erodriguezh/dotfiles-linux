@@ -16,7 +16,7 @@ The ISO build system produces a single bootable ISO (~1.5 GB) that contains all 
 │  1. Expand @^minimal-environment to package list         │
 │  2. dnf5 download --resolve to local RPM cache           │
 │  3. createrepo_c to build repo metadata                  │
-│  4. repoclosure validation                               │
+│  4. Dual validation (repoclosure + install simulation)    │
 │  5. Download: impala, bluetui, starship, JetBrains Mono  │
 │  6. git clone lazy.nvim (stable branch)                  │
 │  7. Copy surface-linux repo + generate theme files       │
@@ -118,7 +118,7 @@ Downloads packages, creates the local repo, and runs repoclosure to verify all d
 
 4. **Create local repo** -- `createrepo_c` generates repo metadata over the downloaded RPMs.
 
-5. **Repoclosure validation** -- Verifies the local repo alone can satisfy every package in the combined list. Uses `dnf5 install --assumeno` with only the local repo enabled.
+5. **Repo validation** -- Two complementary checks verify the local repo is self-consistent and complete, using `--repofrompath` to create a transient repo (dnf5 does not support ad-hoc repo creation via `--setopt`). First, `dnf5 repoclosure` verifies every RPM's `Requires:` is satisfiable within the repo (structural integrity). Then, `dnf5 install --assumeno` verifies the specific combined package list can be resolved from the local repo alone (completeness). Both checks use `--setopt=reposdir=/dev/null` to isolate the local repo.
 
 6. **Download boot.iso** -- Fetches the Fedora 43 boot.iso (~800 MB) with SHA-256 verification. Cached between builds.
 
@@ -199,9 +199,9 @@ The build needs ~5 GB: ~2 GB for RPMs, ~800 MB for boot.iso, ~1.5 GB for the out
 
 If a COPR repo is temporarily down, the RPM download stage will fail. Retry later, or manually download the affected packages and place them in `/build/.cache/rpms/`.
 
-### repoclosure fails
+### Repo validation fails
 
-This means the local repo is missing a dependency. Check the error output for which package requires what. Common causes:
+Stage 5 runs two checks. If **repoclosure** fails, a downloaded RPM has a `Requires:` that no other RPM in the local repo satisfies. If the **install simulation** fails (look for `Problem:` or `No match for argument:` in the output), the specific package list cannot be resolved from the local repo alone. Common causes:
 - A new dependency was added upstream since the last build
 - A COPR package has an unlisted dependency on an official Fedora package
 
