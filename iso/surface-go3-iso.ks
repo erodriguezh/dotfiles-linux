@@ -222,13 +222,20 @@ mkdir -p "${HOME_DIR}/.local/share/nvim/lazy"
 cp -a /run/install/isodir/iso-assets/lazy-nvim \
     "${HOME_DIR}/.local/share/nvim/lazy/lazy.nvim"
 
-# -- Set ownership of all copied files to target user ----------------------
-echo "Setting ownership to ${USERNAME}..."
-chroot /mnt/sysroot chown -R "${USERNAME}:${USERNAME}" "/home/${USERNAME}"
+# -- Set ownership of copied files before fc-cache -------------------------
+# Ownership is fixed comprehensively in %post (chroot) after all home
+# modifications. Here we only set ownership on the fonts directory so
+# fc-cache runs as the right user context.
+echo "Setting font directory ownership..."
+chroot /mnt/sysroot chown -R "${USERNAME}:${USERNAME}" "/home/${USERNAME}/.local/share/fonts" 2>/dev/null || true
 
 # -- Rebuild font cache in chroot ------------------------------------------
 echo "Rebuilding font cache..."
-chroot /mnt/sysroot fc-cache -f
+if chroot /mnt/sysroot command -v fc-cache &>/dev/null; then
+    chroot /mnt/sysroot fc-cache -f || echo "WARN: fc-cache failed — continuing"
+else
+    echo "WARN: fc-cache not found in target system — skipping font cache rebuild"
+fi
 
 echo "=== %post --nochroot complete ==="
 %end
@@ -285,6 +292,18 @@ wifi.backend=iwd
 NM_IWD
 
 echo "NetworkManager iwd backend config written"
+
+# Restore SELinux contexts on NetworkManager config (parity with lib/07-network.sh)
+if command -v selinuxenabled &>/dev/null && selinuxenabled 2>/dev/null; then
+    echo "Restoring SELinux contexts on /etc/NetworkManager..."
+    if command -v restorecon &>/dev/null; then
+        restorecon -R /etc/NetworkManager || echo "WARN: restorecon failed — continuing"
+    else
+        echo "WARN: restorecon not found — skipping SELinux relabel"
+    fi
+else
+    echo "SELinux disabled or not present — skipping restorecon"
+fi
 
 # --------------------------------------------------------------------------
 # Getty auto-login override (from lib/08-desktop.sh:36-61)
@@ -463,7 +482,10 @@ echo "Configuring .bashrc..."
 # Ensure .bashrc exists (Fedora Minimal creates it, but be safe)
 touch "${HOME}/.bashrc"
 
-cat >> "${HOME}/.bashrc" <<'BASHRC_BLOCK'
+# Guard against duplicate insertion (parity with lib/11-dotfiles.sh:149-172)
+BASHRC_GUARD='# Source modular config from bashrc.d'
+if ! grep -qF "$BASHRC_GUARD" "${HOME}/.bashrc" 2>/dev/null; then
+    cat >> "${HOME}/.bashrc" <<'BASHRC_BLOCK'
 
 # Source modular config from bashrc.d
 if [[ -d "${HOME}/.config/bashrc.d" ]]; then
@@ -473,8 +495,10 @@ if [[ -d "${HOME}/.config/bashrc.d" ]]; then
     unset _bashrc_f
 fi
 BASHRC_BLOCK
-
-echo ".bashrc sourcing loop appended"
+    echo ".bashrc sourcing loop appended"
+else
+    echo ".bashrc already sources bashrc.d/ — skipping"
+fi
 
 # --------------------------------------------------------------------------
 # Dotfiles — .bash_profile UWSM auto-start (from lib/11-dotfiles.sh:174-196)
@@ -484,15 +508,20 @@ echo "Configuring .bash_profile..."
 # Ensure .bash_profile exists
 touch "${HOME}/.bash_profile"
 
-cat >> "${HOME}/.bash_profile" <<'UWSM_BLOCK'
+# Guard against duplicate insertion (parity with lib/11-dotfiles.sh:174-196)
+PROFILE_GUARD='# Auto-start Hyprland via UWSM on TTY login'
+if ! grep -qF "$PROFILE_GUARD" "${HOME}/.bash_profile" 2>/dev/null; then
+    cat >> "${HOME}/.bash_profile" <<'UWSM_BLOCK'
 
 # Auto-start Hyprland via UWSM on TTY login
 if command -v uwsm &>/dev/null && uwsm check may-start; then
     exec uwsm start hyprland.desktop
 fi
 UWSM_BLOCK
-
-echo ".bash_profile UWSM auto-start appended"
+    echo ".bash_profile UWSM auto-start appended"
+else
+    echo ".bash_profile already has UWSM snippet — skipping"
+fi
 
 # --------------------------------------------------------------------------
 # Services — set default target (from lib/12-services.sh:29-38)
@@ -514,6 +543,29 @@ systemctl enable tuned-ppd.service
 echo "tuned-ppd.service enabled"
 
 # --------------------------------------------------------------------------
+# Services — set tuned profile to 'powersave' (from lib/12-services.sh:41-49)
+# --------------------------------------------------------------------------
+# Best-effort: tuned-adm may not function fully in chroot, but profile
+# selection is stored as config and takes effect on first boot.
+echo "Setting tuned profile to 'powersave'..."
+
+if command -v tuned-adm &>/dev/null; then
+    if tuned-adm profile powersave; then
+        echo "Tuned profile set to 'powersave'"
+    else
+        echo "WARN: Failed to set tuned profile to 'powersave' (may work after reboot)"
+    fi
+elif [ -x /usr/sbin/tuned-adm ]; then
+    if /usr/sbin/tuned-adm profile powersave; then
+        echo "Tuned profile set to 'powersave'"
+    else
+        echo "WARN: Failed to set tuned profile to 'powersave' (may work after reboot)"
+    fi
+else
+    echo "WARN: tuned-adm not found — tuned profile will need to be set manually after reboot"
+fi
+
+# --------------------------------------------------------------------------
 # Plymouth — set spinner theme (from lib/08-desktop.sh:63-95)
 # --------------------------------------------------------------------------
 # Without -R: Anaconda handles initrd generation, so no rebuild needed here.
@@ -533,16 +585,20 @@ echo "Plymouth theme configured"
 # (from lib/01-repos.sh:29-45)
 # --------------------------------------------------------------------------
 # These repos are needed so `dnf update` works once WiFi is connected.
-echo "Configuring repos for post-install updates..."
+# Best-effort: network may not be available during offline install.
+# If these fail, user can re-run `./install.sh --only repos` post-install.
+echo "Configuring repos for post-install updates (best-effort)..."
 
-dnf5 copr enable -y sdegler/hyprland
-dnf5 copr enable -y scottames/ghostty
-dnf5 copr enable -y alternateved/tofi
+set +e
+dnf5 copr enable -y sdegler/hyprland      || echo "WARN: failed to enable COPR sdegler/hyprland (no network?)"
+dnf5 copr enable -y scottames/ghostty      || echo "WARN: failed to enable COPR scottames/ghostty (no network?)"
+dnf5 copr enable -y alternateved/tofi      || echo "WARN: failed to enable COPR alternateved/tofi (no network?)"
 dnf5 config-manager addrepo \
     --from-repofile=https://pkg.surfacelinux.com/fedora/linux-surface.repo \
-    --overwrite
+    --overwrite                             || echo "WARN: failed to add linux-surface repo (no network?)"
+set -e
 
-echo "Post-install repos configured"
+echo "Post-install repo configuration complete (check warnings above if offline)"
 
 # --------------------------------------------------------------------------
 # Fix ownership — ensure all $HOME content is owned by the target user
