@@ -80,3 +80,7 @@ These paths are in the workspace mount (not container `/tmp/`), so GitHub Action
 - Do NOT use GitHub Actions `container:` directive for Podman. Use explicit `podman run` in `run:` steps.
 - Workflow should NOT embed real credentials. Always use `--test` for CI builds.
 - CI builds with real credentials should only happen via workflow_dispatch with repository secrets.
+
+## Done summary
+
+## Evidence
