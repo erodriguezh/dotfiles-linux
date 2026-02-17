@@ -541,8 +541,9 @@ stage_validate_repo() {
             printf '%s\n' "$install_output"
             exit 1
         fi
-        # Non-zero exit but no resolution errors — resolution succeeded
-        # despite an unexpected exit code; treat as success.
+        # Non-zero exit but no resolution error patterns found — likely
+        # benign, but could mask a non-resolution error. Treat as success
+        # for now; tighten to hard-fail if this path ever triggers unexpectedly.
     fi
 
     success "Install simulation passed: all ${#all_pkgs[@]} packages satisfiable from local repo"
