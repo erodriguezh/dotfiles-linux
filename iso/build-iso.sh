@@ -841,8 +841,8 @@ patch_efiboot_label() {
     local work_dir
     work_dir="$(mktemp -d /tmp/efi-patch.XXXXXX)"
 
-    # Clean up work_dir on function return (explicit rm -rf calls in error
-    # branches handle the exit paths; this trap covers implicit returns).
+    # Clean up work_dir on any function return (normal or error).
+    # All error paths use `return 1` so the RETURN trap always fires.
     trap 'rm -rf "$work_dir"' RETURN
 
     info "Patching efiboot.img volume label to '$new_label'..."
@@ -851,8 +851,7 @@ patch_efiboot_label() {
     local efi_img="${work_dir}/efiboot.img"
     if ! osirrox -indev "$iso_path" -extract /images/efiboot.img "$efi_img" 2>/dev/null; then
         error "Failed to extract efiboot.img from ISO"
-        rm -rf "$work_dir"
-        exit 1
+        return 1
     fi
 
     # Step B: Discover grub.cfg inside the FAT image
@@ -867,8 +866,7 @@ patch_efiboot_label() {
 
     if [[ -z "$grub_path" ]]; then
         error "Cannot locate grub.cfg inside efiboot.img (tried EFI/BOOT and EFI/fedora)"
-        rm -rf "$work_dir"
-        exit 1
+        return 1
     fi
     info "  Found grub.cfg at: $grub_path"
 
@@ -877,20 +875,19 @@ patch_efiboot_label() {
     mcopy -i "$efi_img" "$grub_path" "$grub_file"
 
     # Extract original label(s) from grub.cfg using python3 (guaranteed via lorax).
-    # Patterns are tried per-line in priority order: quoted first, then unquoted.
-    # This prevents the unquoted catch-all from capturing quote characters.
-    local old_label
-    old_label="$(python3 -c "
+    # Python script written to file via heredoc to eliminate bash quoting ambiguity.
+    local _py_extract="${work_dir}/extract_label.py"
+    cat > "$_py_extract" << 'PYEOF'
 import re, sys
 
 content = open(sys.argv[1]).read()
 
 # Per-line patterns in priority order: quoted first, unquoted last.
-# (?:--label|-l) matches both long and short flag variants.
+# This prevents the unquoted catch-all from capturing quote characters.
 line_patterns = [
-    r\"search.*(?:--label|-l)\s+'([^']+)'\",       # single-quoted
-    r'search.*(?:--label|-l)\s+\"([^\"]+)\"',       # double-quoted
-    r'search.*(?:--label|-l)\s+([^\s\x27\x22]+)',   # unquoted (no quotes/spaces)
+    r"search.*(?:--label|-l)\s+'([^']+)'",       # single-quoted
+    r'search.*(?:--label|-l)\s+"([^"]+)"',        # double-quoted
+    r"search.*(?:--label|-l)\s+([^\s'\"]+)",       # unquoted (no quotes/spaces)
 ]
 
 labels = set()
@@ -910,20 +907,20 @@ if len(labels) > 1:
     sys.exit(0)
 
 print(labels.pop(), end='')
-" "$grub_file")"
+PYEOF
+    local old_label
+    old_label="$(python3 "$_py_extract" "$grub_file")"
 
     if [[ "$old_label" == "__NO_LABEL_FOUND__" ]]; then
         error "No volume label found in grub.cfg — cannot patch efiboot.img"
-        rm -rf "$work_dir"
-        exit 1
+        return 1
     fi
 
     if [[ "$old_label" == __MULTIPLE_LABELS__:* ]]; then
         local found_labels="${old_label#__MULTIPLE_LABELS__:}"
         error "Multiple distinct labels found in grub.cfg: $found_labels"
         error "Ambiguous — cannot safely patch efiboot.img"
-        rm -rf "$work_dir"
-        exit 1
+        return 1
     fi
 
     info "  Original label: '$old_label'"
@@ -931,12 +928,13 @@ print(labels.pop(), end='')
 
     if [[ "$old_label" == "$new_label" ]]; then
         info "  Labels already match — no patching needed"
-        rm -rf "$work_dir"
-        return
+        return 0
     fi
 
-    # Replace using python3 with re.sub + re.escape (preserves quoting style)
-    python3 -c "
+    # Replace label using python3 with re.sub + re.escape (preserves quoting style).
+    # Python script written to file via heredoc to eliminate bash quoting ambiguity.
+    local _py_replace="${work_dir}/replace_label.py"
+    cat > "$_py_replace" << 'PYEOF'
 import re, sys
 
 old = sys.argv[1]
@@ -945,22 +943,22 @@ content = open(sys.argv[3]).read()
 
 # Replace the label operand in --label and -l search commands.
 # Preserve the original quoting style by matching the full operand with quotes.
-# For unquoted variants, handle both mid-line (followed by whitespace) and
-# end-of-line (followed by newline or EOF) cases.
+# For unquoted variants, handle both mid-line and end-of-line cases.
 patterns = [
-    (r\"(search.*--label\s+)'\" + re.escape(old) + r\"'\", r\"\\1'\" + new + r\"'\"),
-    (r'(search.*--label\s+)\"' + re.escape(old) + r'\"', r'\\1\"' + new + r'\"'),
-    (r'(search.*--label\s+)' + re.escape(old) + r'([\s]|$)', r'\\1' + new + r'\\2'),
-    (r\"(search.*-l\s+)'\" + re.escape(old) + r\"'\", r\"\\1'\" + new + r\"'\"),
-    (r'(search.*-l\s+)\"' + re.escape(old) + r'\"', r'\\1\"' + new + r'\"'),
-    (r'(search.*-l\s+)' + re.escape(old) + r'([\s]|$)', r'\\1' + new + r'\\2'),
+    (r"(search.*--label\s+)'" + re.escape(old) + r"'", r"\1'" + new + r"'"),
+    (r'(search.*--label\s+)"' + re.escape(old) + r'"', r'\1"' + new + r'"'),
+    (r"(search.*--label\s+)" + re.escape(old) + r"([\s]|$)", r"\1" + new + r"\2"),
+    (r"(search.*-l\s+)'" + re.escape(old) + r"'", r"\1'" + new + r"'"),
+    (r'(search.*-l\s+)"' + re.escape(old) + r'"', r'\1"' + new + r'"'),
+    (r"(search.*-l\s+)" + re.escape(old) + r"([\s]|$)", r"\1" + new + r"\2"),
 ]
 
 for pat, repl in patterns:
     content = re.sub(pat, repl, content, flags=re.MULTILINE)
 
 open(sys.argv[3], 'w').write(content)
-" "$old_label" "$new_label" "$grub_file"
+PYEOF
+    python3 "$_py_replace" "$old_label" "$new_label" "$grub_file"
 
     # Write back
     mcopy -o -i "$efi_img" "$grub_file" "$grub_path"
@@ -975,13 +973,11 @@ open(sys.argv[3], 'w').write(content)
 
     if [[ "$old_count" -ne 0 ]]; then
         error "Verification failed: old label '$old_label' still present ($old_count occurrences)"
-        rm -rf "$work_dir"
-        exit 1
+        return 1
     fi
     if [[ "$new_count" -lt 1 ]]; then
         error "Verification failed: new label '$new_label' not found in patched grub.cfg"
-        rm -rf "$work_dir"
-        exit 1
+        return 1
     fi
     success "  Label patched and verified ($new_count occurrences of '$new_label')"
 
@@ -993,8 +989,7 @@ open(sys.argv[3], 'w').write(content)
     if [[ $xorriso_rc -ne 0 ]]; then
         error "xorriso -report_system_area failed (exit $xorriso_rc):"
         printf '%s\n' "$xorriso_output" >&2
-        rm -rf "$work_dir"
-        exit 1
+        return 1
     fi
 
     # Parse for appended EFI partitions: lines with "Partition N ... type 0xEF"
@@ -1025,8 +1020,7 @@ open(sys.argv[3], 'w').write(content)
     if [[ ${#unique_idx[@]} -gt 1 ]]; then
         error "Multiple distinct EFI partition indices found: ${unique_idx[*]}"
         error "Ambiguous — cannot safely re-inject efiboot.img"
-        rm -rf "$work_dir"
-        exit 1
+        return 1
     elif [[ ${#unique_idx[@]} -eq 1 ]]; then
         local efi_idx="${unique_idx[0]}"
         info "  Appended EFI partition found at index $efi_idx — re-injecting with -append_partition"
@@ -1048,7 +1042,6 @@ open(sys.argv[3], 'w').write(content)
     info "  Re-implanting media checksum (implantisomd5)..."
     implantisomd5 "$iso_path"
 
-    rm -rf "$work_dir"
     success "efiboot.img patched successfully"
 }
 
@@ -1299,7 +1292,10 @@ stage_assemble_iso() {
     # Patch efiboot.img when --skip-mkefiboot was used and -V changed the label
     # -----------------------------------------------------------------------
     if [[ "$needs_efi_patch" == true ]]; then
-        patch_efiboot_label "$output_iso" "SurfaceLinux-43"
+        if ! patch_efiboot_label "$output_iso" "SurfaceLinux-43"; then
+            error "efiboot.img patching failed — aborting"
+            exit 1
+        fi
     fi
 
     # Clean up staging
