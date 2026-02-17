@@ -134,5 +134,8 @@ Two commits within a single PR to reduce blast radius:
 - [ ] `shellcheck iso/build-iso.sh` passes; CI unaffected
 
 ## Done summary
-
+Strengthened losetup pre-flight probe to test actual loop device attachment (not just availability), added mtools-based efiboot.img patching to fix UEFI boot label mismatch when --skip-mkefiboot is active, removed duplicate inst.ks= entries, and updated Containerfile and README.
 ## Evidence
+- Commits: 80e53ab8887baa4faf566f4cbe9e85c10647f7c0
+- Tests: bash -n iso/build-iso.sh, python3 label extraction/replacement end-to-end tests
+- PRs:
