@@ -1,0 +1,47 @@
+{
+  "created_at": "2026-02-17T19:23:41.092781Z",
+  "epic": {
+    "data": {
+      "branch_name": "fn-6-fix-losetup-pre-flight-detection-and",
+      "completion_review_status": "unknown",
+      "completion_reviewed_at": null,
+      "created_at": "2026-02-17T19:21:55.156603Z",
+      "default_impl": null,
+      "default_review": null,
+      "default_sync": null,
+      "depends_on_epics": [],
+      "id": "fn-6-fix-losetup-pre-flight-detection-and",
+      "next_task": 1,
+      "plan_review_status": "unknown",
+      "plan_reviewed_at": null,
+      "spec_path": ".flow/specs/fn-6-fix-losetup-pre-flight-detection-and.md",
+      "status": "open",
+      "title": "Fix losetup pre-flight detection and EFI boot label in ISO builder",
+      "updated_at": "2026-02-17T19:22:27.271773Z"
+    },
+    "spec": "# Fix losetup pre-flight detection and EFI boot label in ISO builder\n\n## Overview\n\nThe ISO builder's losetup pre-flight check (PR #4, commit `2788642`) is too weak. It runs `losetup --find` (query-only: prints next available `/dev/loopN`) but mkefiboot internally runs `losetup --find --show <file>` (actual attachment). These test fundamentally different capabilities \u2014 the query can succeed in environments where attachment fails (loop device nodes exist but are non-functional).\n\nAdditionally, when `--skip-mkefiboot` activates and `-V \"SurfaceLinux-43\"` changes the ISO volume label, the efiboot.img's internal grub.cfg still references the original Fedora label (`Fedora-E-dvd-x86_64-43`). On UEFI USB boot, GRUB searches for a volume with the old label, fails to find it, and boot breaks.\n\n## Scope\n\n- Strengthen the losetup pre-flight to test actual loop device attachment\n- Add `mtools` and `dosfstools` to the Containerfile for loop-free FAT image manipulation\n- When `--skip-mkefiboot` is active, use mtools to patch efiboot.img's grub.cfg with the custom volume label so UEFI USB boot works\n- Clarify the duplicate `inst.ks` entries (`--ks` auto-generates one + `-c` adds another)\n- Update iso/README.md troubleshooting section\n\n## Quick commands\n\n```bash\n# Build ISO in container (the fix target)\nsudo podman build -t surface-iso-builder -f iso/Containerfile iso/\nsudo podman run --rm -v \"$PWD:/build:Z\" surface-iso-builder /build/iso/build-iso.sh --validate\n\n# Test losetup probe locally (simulates container without loop devices)\nunshare --mount bash -c 'losetup --find 2>/dev/null && echo \"query ok\" || echo \"query fail\"'\n\n# ShellCheck the script\nshellcheck iso/build-iso.sh\n```\n\n## Acceptance\n\n- [ ] `losetup --find --show <tempfile>` used as the pre-flight probe (not bare `losetup --find`)\n- [ ] Probe cleans up temp file and detaches loop device on success AND failure (trap-based)\n- [ ] `mtools` and `dosfstools` added to Containerfile\n- [ ] When `--skip-mkefiboot` is active, efiboot.img's grub.cfg is patched with the custom volume label via mtools (`mcopy` extract \u2192 `sed` \u2192 `mcopy` overwrite)\n- [ ] No duplicate `inst.ks` entries in the kernel cmdline\n- [ ] iso/README.md troubleshooting section updated to reflect the stronger probe and mtools patching\n- [ ] `shellcheck iso/build-iso.sh` passes (no new warnings)\n- [ ] CI workflow (`build-iso.yml`) unaffected \u2014 `--privileged` containers still take the full mkefiboot path\n\n## References\n\n- PR #4 (commit `2788642`): original losetup skip fix\n- lorax issue #1046: volume label mismatch breaks UEFI USB boot\n- Arch Linux archiso MR !72: migration from loop-mount to mtools\n- linuxkit/linuxkit `make-efi`: production mtools-based EFI image building\n- `iso/build-iso.sh:860-878`: current losetup check + mkksiso invocation\n- `iso/Containerfile:12-21`: build tool installation\n- `iso/README.md:210-225`: troubleshooting section\n"
+  },
+  "epic_id": "fn-6-fix-losetup-pre-flight-detection-and",
+  "schema_version": 2,
+  "tasks": [
+    {
+      "data": {
+        "assignee": null,
+        "claim_note": "",
+        "claimed_at": null,
+        "created_at": "2026-02-17T19:22:35.298700Z",
+        "depends_on": [],
+        "epic": "fn-6-fix-losetup-pre-flight-detection-and",
+        "id": "fn-6-fix-losetup-pre-flight-detection-and.1",
+        "priority": null,
+        "spec_path": ".flow/tasks/fn-6-fix-losetup-pre-flight-detection-and.1.md",
+        "status": "todo",
+        "title": "Strengthen losetup probe, add mtools patching, fix duplicate inst.ks",
+        "updated_at": "2026-02-17T19:23:09.285639Z"
+      },
+      "id": "fn-6-fix-losetup-pre-flight-detection-and.1",
+      "runtime": null,
+      "spec": "# fn-6-fix-losetup-pre-flight-detection-and.1 Strengthen losetup probe, add mtools patching, fix duplicate inst.ks\n\n## Description\nFix three related issues in `stage_assemble_iso()` that cause ISO builds to fail or produce non-bootable UEFI USB media when loop devices are unavailable.\n\n**Size:** M\n**Files:** `iso/build-iso.sh`, `iso/Containerfile`, `iso/README.md`\n\n## Approach\n\n### 1. Strengthen losetup pre-flight probe (`build-iso.sh:860-868`)\n\nReplace the weak `losetup --find` query with an actual attachment test. Follow the pattern at `build-iso.sh:860`:\n\n- Create a 1 MiB temp file via `truncate -s 1M`\n- Attempt `losetup --find --show <tempfile>` \u2014 this tests the exact same operation mkefiboot uses\n- On success: detach with `losetup -d`, remove temp file, proceed without `--skip-mkefiboot`\n- On failure: remove temp file, add `--skip-mkefiboot` + trigger efiboot.img patching\n- Use a trap to ensure cleanup on any exit path (temp file + loop device)\n\n### 2. Add mtools efiboot.img patching (`build-iso.sh`, new helper function)\n\nWhen `--skip-mkefiboot` is active and `-V` changes the volume label:\n\n- After mkksiso produces the output ISO, extract efiboot.img: `osirrox -indev <output> -extract /images/efiboot.img /tmp/efiboot.img`\n- Extract grub.cfg from the FAT image: `mcopy -i /tmp/efiboot.img ::EFI/BOOT/grub.cfg /tmp/efi-grub.cfg`\n- Replace the original Fedora volume label with the custom one via `sed`\n- Write patched grub.cfg back: `mcopy -o -i /tmp/efiboot.img /tmp/efi-grub.cfg ::EFI/BOOT/grub.cfg`\n- Re-inject into ISO: `xorriso -indev <output> -outdev <fixed> -boot_image any replay -append_partition 2 0xEF /tmp/efiboot.img`\n\n**Important:** The original Fedora label is in the xorriso output already (`Fedora-E-dvd-x86_64-43` from the source ISO Volume ID). Extract it programmatically with `xorriso -indev \"$BOOT_ISO\" -pvd_info` to avoid hardcoding.\n\n### 3. Add mtools + dosfstools to Containerfile (`Containerfile:12-21`)\n\nAdd `mtools` and `dosfstools` to the `dnf5 install` line. These are needed unconditionally since loop device availability is only known at runtime.\n\n### 4. Fix duplicate `inst.ks` entries (`build-iso.sh:870-875`)\n\nThe `--ks` flag auto-generates `inst.ks=hd:LABEL=<volid>:/<basename>`. The `-c \"inst.ks=cdrom:/ks.cfg\"` adds a second entry. Anaconda uses the last one.\n\nOptions (pick one during implementation):\n- **Option A:** Drop `-c \"inst.ks=cdrom:/ks.cfg\"` entirely \u2014 let `--ks` handle it. The auto-generated `hd:LABEL=SurfaceLinux-43:/kickstart.ks` works for both CD and USB boot.\n- **Option B:** Drop `--ks` and use only `-c \"inst.ks=cdrom:/ks.cfg\"` + manually add the kickstart via `-a`. More explicit but loses mkksiso's auto-cleanup of stale `inst.ks` entries.\n\nPrefer Option A \u2014 it's cleaner and the `hd:LABEL=` format is universal.\n\n### 5. Update docs (`iso/README.md:210-225`)\n\nUpdate the troubleshooting section to reflect:\n- The stronger probe mechanism\n- The mtools-based efiboot.img patching\n- The volume label consistency guarantee\n\n## Key context\n\n- `--skip-mkefiboot` is a valid mkksiso flag (`lorax/src/bin/mkksiso:L574`). It skips `RebuildEFIBoot()`.\n- mtools `mcopy -i <img>` operates directly on FAT images without loop devices (used by Arch archiso, linuxkit).\n- **Do NOT use `mformat`** to create FAT images \u2014 Arch archiso migration warned it can fail to boot on some systems. Use `mkfs.msdos` for creation, mtools only for manipulation.\n- `xorriso -boot_image any replay` preserves existing boot records (El Torito, MBR, GPT) when rebuilding.\n- The Fedora source ISO's volume label can be extracted with `xorriso -indev <iso> -pvd_info 2>&1 | grep 'Volume Id'`.\n## Acceptance\n- [ ] Pre-flight probe uses `losetup --find --show <tempfile>` (actual attachment test, not bare `--find`)\n- [ ] Probe temp file and loop device cleaned up via trap on all exit paths\n- [ ] `mtools` and `dosfstools` added to `iso/Containerfile`\n- [ ] When `--skip-mkefiboot` + custom volume label: efiboot.img's grub.cfg patched via mtools with correct label\n- [ ] Original Fedora volume label extracted programmatically (not hardcoded)\n- [ ] No duplicate `inst.ks` entries in kernel cmdline\n- [ ] `iso/README.md` troubleshooting section updated\n- [ ] `shellcheck iso/build-iso.sh` passes with no new warnings\n- [ ] CI (`build-iso.yml` with `--privileged`) continues to work \u2014 full mkefiboot path taken when loop devices are functional\n## Done summary\nTBD\n\n## Evidence\n- Commits:\n- Tests:\n- PRs:\n"
+    }
+  ]
+}

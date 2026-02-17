@@ -211,13 +211,24 @@ Fix: Add the missing package to `lib/03-packages.sh` and rebuild.
 
 `mkksiso` calls `mkefiboot` which needs loop devices (`/dev/loop*`) to build the EFI boot image. Loop devices are unavailable in rootless Podman, macOS Docker, and some CI environments.
 
-The build script **automatically detects** this and adds `--skip-mkefiboot`, which reuses the EFI image from the source Fedora ISO. You'll see a warning in the output:
+The build script **automatically detects** this using an actual loop device attachment test (creates a 1 MiB temp file and attempts `losetup --find --show`). If attachment fails, it adds `--skip-mkefiboot` and then **patches the efiboot.img** inside the output ISO using mtools (no loop devices needed):
+
+1. Extracts `efiboot.img` from the ISO via `osirrox`
+2. Locates `grub.cfg` inside the FAT image via `mcopy` existence probes
+3. Replaces the original Fedora volume label with the custom label (`SurfaceLinux-43`) using `python3` regex substitution
+4. Re-injects the patched `efiboot.img` via `xorriso`, preserving any appended EFI partition
+5. Re-implants the media checksum via `implantisomd5`
+
+You'll see warnings in the output:
 
 ```
-[WARN] Loop devices unavailable — adding --skip-mkefiboot (EFI image reused from source ISO)
+[WARN] Loop device attachment failed — adding --skip-mkefiboot
+[INFO] Patching efiboot.img volume label to 'SurfaceLinux-43'...
 ```
 
-This is safe — UEFI boot works correctly with the original EFI image. If you need the custom volume label in the EFI partition, use rootful Podman:
+As a defense-in-depth measure, if the initial mkksiso run (without `--skip-mkefiboot`) fails with a mkefiboot/losetup error, the script automatically retries once with `--skip-mkefiboot` and patching enabled.
+
+UEFI USB boot is preserved because the patched grub.cfg searches for the correct custom volume label. If you need custom EFI partition modifications beyond label patching, use rootful Podman:
 
 ```bash
 sudo podman run --privileged --rm -v "$PWD:/build" \

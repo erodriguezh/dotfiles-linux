@@ -827,6 +827,228 @@ stage_substitute_credentials() {
 }
 
 # ---------------------------------------------------------------------------
+# Helper: Patch efiboot.img volume label inside an ISO
+# ---------------------------------------------------------------------------
+# When --skip-mkefiboot is active and -V changes the ISO volume label,
+# the efiboot.img's internal grub.cfg still references the original Fedora
+# label. On UEFI USB boot, GRUB searches for a volume with the old label,
+# fails to find it, and boot breaks. This function patches the label using
+# mtools (no loop devices needed).
+
+patch_efiboot_label() {
+    local iso_path="$1"
+    local new_label="$2"
+    local work_dir
+    work_dir="$(mktemp -d /tmp/efi-patch.XXXXXX)"
+
+    info "Patching efiboot.img volume label to '$new_label'..."
+
+    # Step A: Extract efiboot.img from the output ISO
+    local efi_img="${work_dir}/efiboot.img"
+    if ! osirrox -indev "$iso_path" -extract /images/efiboot.img "$efi_img" 2>/dev/null; then
+        error "Failed to extract efiboot.img from ISO"
+        rm -rf "$work_dir"
+        exit 1
+    fi
+
+    # Step B: Discover grub.cfg inside the FAT image
+    local grub_path=""
+    local candidate
+    for candidate in "::/EFI/BOOT/grub.cfg" "::/EFI/fedora/grub.cfg"; do
+        if mcopy -n -i "$efi_img" "$candidate" /dev/null 2>/dev/null; then
+            grub_path="$candidate"
+            break
+        fi
+    done
+
+    if [[ -z "$grub_path" ]]; then
+        error "Cannot locate grub.cfg inside efiboot.img (tried EFI/BOOT and EFI/fedora)"
+        rm -rf "$work_dir"
+        exit 1
+    fi
+    info "  Found grub.cfg at: $grub_path"
+
+    # Step C: Extract, patch, and write back grub.cfg
+    local grub_file="${work_dir}/grub.cfg"
+    mcopy -i "$efi_img" "$grub_path" "$grub_file"
+
+    # Extract original label(s) from grub.cfg using python3 (guaranteed via lorax).
+    # Patterns are tried per-line in priority order: quoted first, then unquoted.
+    # This prevents the unquoted catch-all from capturing quote characters.
+    local old_label
+    old_label="$(python3 -c "
+import re, sys
+
+content = open(sys.argv[1]).read()
+
+# Per-line patterns in priority order: quoted first, unquoted last.
+# (?:--label|-l) matches both long and short flag variants.
+line_patterns = [
+    r\"search.*(?:--label|-l)\s+'([^']+)'\",       # single-quoted
+    r'search.*(?:--label|-l)\s+\"([^\"]+)\"',       # double-quoted
+    r'search.*(?:--label|-l)\s+([^\s\x27\x22]+)',   # unquoted (no quotes/spaces)
+]
+
+labels = set()
+for line in content.splitlines():
+    for pat in line_patterns:
+        m = re.search(pat, line)
+        if m:
+            labels.add(m.group(1))
+            break  # first match wins per line
+
+if not labels:
+    print('__NO_LABEL_FOUND__', end='')
+    sys.exit(0)
+
+if len(labels) > 1:
+    print('__MULTIPLE_LABELS__:' + ','.join(sorted(labels)), end='')
+    sys.exit(0)
+
+print(labels.pop(), end='')
+" "$grub_file")"
+
+    if [[ "$old_label" == "__NO_LABEL_FOUND__" ]]; then
+        error "No volume label found in grub.cfg — cannot patch efiboot.img"
+        rm -rf "$work_dir"
+        exit 1
+    fi
+
+    if [[ "$old_label" == __MULTIPLE_LABELS__:* ]]; then
+        local found_labels="${old_label#__MULTIPLE_LABELS__:}"
+        error "Multiple distinct labels found in grub.cfg: $found_labels"
+        error "Ambiguous — cannot safely patch efiboot.img"
+        rm -rf "$work_dir"
+        exit 1
+    fi
+
+    info "  Original label: '$old_label'"
+    info "  New label:      '$new_label'"
+
+    if [[ "$old_label" == "$new_label" ]]; then
+        info "  Labels already match — no patching needed"
+        rm -rf "$work_dir"
+        return
+    fi
+
+    # Replace using python3 with re.sub + re.escape (preserves quoting style)
+    python3 -c "
+import re, sys
+
+old = sys.argv[1]
+new = sys.argv[2]
+content = open(sys.argv[3]).read()
+
+# Replace the label operand in --label and -l search commands.
+# Preserve the original quoting style by matching the full operand with quotes.
+# For unquoted variants, handle both mid-line (followed by whitespace) and
+# end-of-line (followed by newline or EOF) cases.
+patterns = [
+    (r\"(search.*--label\s+)'\" + re.escape(old) + r\"'\", r\"\\1'\" + new + r\"'\"),
+    (r'(search.*--label\s+)\"' + re.escape(old) + r'\"', r'\\1\"' + new + r'\"'),
+    (r'(search.*--label\s+)' + re.escape(old) + r'([\s]|$)', r'\\1' + new + r'\\2'),
+    (r\"(search.*-l\s+)'\" + re.escape(old) + r\"'\", r\"\\1'\" + new + r\"'\"),
+    (r'(search.*-l\s+)\"' + re.escape(old) + r'\"', r'\\1\"' + new + r'\"'),
+    (r'(search.*-l\s+)' + re.escape(old) + r'([\s]|$)', r'\\1' + new + r'\\2'),
+]
+
+for pat, repl in patterns:
+    content = re.sub(pat, repl, content, flags=re.MULTILINE)
+
+open(sys.argv[3], 'w').write(content)
+" "$old_label" "$new_label" "$grub_file"
+
+    # Write back
+    mcopy -o -i "$efi_img" "$grub_file" "$grub_path"
+
+    # Verify: re-extract and check
+    local verify_file="${work_dir}/grub-verify.cfg"
+    mcopy -i "$efi_img" "$grub_path" "$verify_file"
+
+    local old_count new_count
+    old_count="$(grep -c "$old_label" "$verify_file" 2>/dev/null || echo 0)"
+    new_count="$(grep -c "$new_label" "$verify_file" 2>/dev/null || echo 0)"
+
+    if [[ "$old_count" -ne 0 ]]; then
+        error "Verification failed: old label '$old_label' still present ($old_count occurrences)"
+        rm -rf "$work_dir"
+        exit 1
+    fi
+    if [[ "$new_count" -lt 1 ]]; then
+        error "Verification failed: new label '$new_label' not found in patched grub.cfg"
+        rm -rf "$work_dir"
+        exit 1
+    fi
+    success "  Label patched and verified ($new_count occurrences of '$new_label')"
+
+    # Step D: Detect appended EFI partition and re-inject
+    local xorriso_output
+    local xorriso_rc=0
+    xorriso_output="$(xorriso -indev "$iso_path" -report_system_area plain 2>&1)" || xorriso_rc=$?
+
+    if [[ $xorriso_rc -ne 0 ]]; then
+        error "xorriso -report_system_area failed (exit $xorriso_rc):"
+        printf '%s\n' "$xorriso_output" >&2
+        rm -rf "$work_dir"
+        exit 1
+    fi
+
+    # Parse for appended EFI partitions: lines with "Partition N ... type 0xEF"
+    local -a efi_indices=()
+    local xline
+    while IFS= read -r xline; do
+        if [[ "$xline" =~ ^Partition[[:space:]]+([0-9]+) ]]; then
+            local _part_idx="${BASH_REMATCH[1]}"
+            if [[ "$xline" =~ type[[:space:]]+0x[Ee][Ff] ]]; then
+                efi_indices+=("$_part_idx")
+            fi
+        fi
+    done <<< "$xorriso_output"
+
+    # Deduplicate indices
+    local -A seen_idx=()
+    local -a unique_idx=()
+    local idx
+    for idx in "${efi_indices[@]}"; do
+        if [[ -z "${seen_idx[$idx]:-}" ]]; then
+            seen_idx[$idx]=1
+            unique_idx+=("$idx")
+        fi
+    done
+
+    local fixed_iso="${work_dir}/fixed.iso"
+
+    if [[ ${#unique_idx[@]} -gt 1 ]]; then
+        error "Multiple distinct EFI partition indices found: ${unique_idx[*]}"
+        error "Ambiguous — cannot safely re-inject efiboot.img"
+        rm -rf "$work_dir"
+        exit 1
+    elif [[ ${#unique_idx[@]} -eq 1 ]]; then
+        local efi_idx="${unique_idx[0]}"
+        info "  Appended EFI partition found at index $efi_idx — re-injecting with -append_partition"
+        xorriso -indev "$iso_path" -outdev "$fixed_iso" \
+            -boot_image any replay \
+            -update "$efi_img" /images/efiboot.img \
+            -append_partition "$efi_idx" 0xEF "$efi_img"
+    else
+        info "  No appended EFI partition — updating efiboot.img in-place"
+        xorriso -indev "$iso_path" -outdev "$fixed_iso" \
+            -boot_image any replay \
+            -update "$efi_img" /images/efiboot.img
+    fi
+
+    # Replace original ISO with patched version
+    mv -f "$fixed_iso" "$iso_path"
+
+    # Step E: Re-implant media checksum
+    info "  Re-implanting media checksum (implantisomd5)..."
+    implantisomd5 "$iso_path"
+
+    rm -rf "$work_dir"
+    success "efiboot.img patched successfully"
+}
+
+# ---------------------------------------------------------------------------
 # Stage 11: Assemble ISO
 # ---------------------------------------------------------------------------
 
@@ -857,25 +1079,188 @@ stage_assemble_iso() {
     info "  Input: $BOOT_ISO"
     info "  Output: $output_iso"
 
-    # Detect whether loop devices are available. mkefiboot (called by mkksiso)
-    # needs losetup to create a FAT EFI boot image. Loop devices are unavailable
-    # in rootless Podman, macOS Docker, and some CI environments. When absent,
-    # --skip-mkefiboot tells mkksiso to reuse the EFI image from the source ISO.
+    # -----------------------------------------------------------------------
+    # Pre-flight: test actual loop device attachment (not just availability).
+    # mkefiboot runs `losetup --find --show <file>` internally; the bare
+    # `losetup --find` query that was here before tests a fundamentally
+    # different capability (device nodes can exist but be non-functional).
+    # -----------------------------------------------------------------------
     local -a mkksiso_flags=()
-    if ! losetup --find 2>/dev/null; then
-        warn "Loop devices unavailable — adding --skip-mkefiboot (EFI image reused from source ISO)"
+    local needs_efi_patch=false
+
+    local _loop_probe_ok=false
+    local _probe_file=""
+    local _probe_loop=""
+    _probe_file="$(mktemp /tmp/loop-probe.XXXXXX)"
+    truncate -s 1M "$_probe_file"
+
+    if _probe_loop="$(losetup --find --show "$_probe_file" 2>/dev/null)"; then
+        # Detach immediately — we only needed to test attachment
+        losetup -d "$_probe_loop" 2>/dev/null || true
+        _loop_probe_ok=true
+        info "Loop device probe succeeded — mkefiboot will run normally"
+    else
+        warn "Loop device attachment failed — adding --skip-mkefiboot"
+    fi
+    # Always clean up probe temp file
+    rm -f "$_probe_file"
+
+    if [[ "$_loop_probe_ok" != true ]]; then
         mkksiso_flags+=(--skip-mkefiboot)
+        needs_efi_patch=true
     fi
 
+    # -----------------------------------------------------------------------
+    # Run mkksiso (with defense-in-depth retry on mkefiboot/losetup failure)
+    # -----------------------------------------------------------------------
+    # NOTE: --ks already injects inst.ks=cdrom:/ks.cfg into boot configs.
+    # Do NOT also pass -c "inst.ks=..." — that causes duplicate entries.
+    local mkksiso_stderr
+    mkksiso_stderr="$(mktemp /tmp/mkksiso-stderr.XXXXXX)"
+
+    local mkksiso_rc=0
     mkksiso --ks /tmp/kickstart.ks \
         "${mkksiso_flags[@]}" \
         -a "${staging}/local-repo" \
         -a "${staging}/iso-assets" \
         -a "${staging}/surface-linux" \
-        -c "inst.ks=cdrom:/ks.cfg" \
         -V "SurfaceLinux-43" \
         "$BOOT_ISO" \
-        "$output_iso"
+        "$output_iso" \
+        2> "$mkksiso_stderr" || mkksiso_rc=$?
+
+    if [[ $mkksiso_rc -ne 0 ]]; then
+        # Check if the failure is mkefiboot/losetup-related (tight substring match)
+        local retry_match=false
+        local pattern
+        for pattern in "mkefiboot" "losetup:" "loop_attach" "failed to set up loop device"; do
+            if grep -qi "$pattern" "$mkksiso_stderr" 2>/dev/null; then
+                retry_match=true
+                break
+            fi
+        done
+
+        if [[ "$retry_match" == true && "$needs_efi_patch" == false ]]; then
+            # First attempt failed with mkefiboot/losetup error — retry once
+            # with --skip-mkefiboot
+            warn "mkksiso failed with mkefiboot/losetup error — retrying with --skip-mkefiboot"
+            local first_stderr
+            first_stderr="$(mktemp /tmp/mkksiso-stderr-first.XXXXXX)"
+            cp "$mkksiso_stderr" "$first_stderr"
+
+            # Remove partially written output ISO before retry
+            rm -f "$output_iso"
+
+            mkksiso_flags+=(--skip-mkefiboot)
+            needs_efi_patch=true
+
+            local retry_rc=0
+            mkksiso --ks /tmp/kickstart.ks \
+                "${mkksiso_flags[@]}" \
+                -a "${staging}/local-repo" \
+                -a "${staging}/iso-assets" \
+                -a "${staging}/surface-linux" \
+                -V "SurfaceLinux-43" \
+                "$BOOT_ISO" \
+                "$output_iso" \
+                2> "$mkksiso_stderr" || retry_rc=$?
+
+            if [[ $retry_rc -ne 0 ]]; then
+                error "mkksiso retry also failed (exit $retry_rc)"
+                error "--- First attempt stderr ---"
+                cat "$first_stderr" >&2
+                error "--- Retry attempt stderr ---"
+                cat "$mkksiso_stderr" >&2
+                rm -f "$first_stderr" "$mkksiso_stderr"
+                exit 1
+            fi
+            rm -f "$first_stderr"
+            success "mkksiso retry with --skip-mkefiboot succeeded"
+        else
+            # Non-mkefiboot error, or already retried — fail immediately
+            error "mkksiso failed (exit $mkksiso_rc)"
+            cat "$mkksiso_stderr" >&2
+            rm -f "$mkksiso_stderr"
+            exit 1
+        fi
+    fi
+    rm -f "$mkksiso_stderr"
+
+    # -----------------------------------------------------------------------
+    # Verify no duplicate inst.ks entries in boot configs
+    # -----------------------------------------------------------------------
+    _verify_no_duplicate_inst_ks() {
+        local iso_path="$1"
+        local tmp_mount
+        tmp_mount="$(mktemp -d /tmp/iso-verify.XXXXXX)"
+
+        # BIOS: check isolinux/syslinux config from ISO filesystem
+        local bios_cfg=""
+        local bios_candidate
+        for bios_candidate in "/isolinux/isolinux.cfg" "/syslinux/syslinux.cfg"; do
+            if osirrox -indev "$iso_path" -extract "$bios_candidate" "${tmp_mount}/bios.cfg" 2>/dev/null; then
+                bios_cfg="${tmp_mount}/bios.cfg"
+                break
+            fi
+        done
+
+        if [[ -n "$bios_cfg" ]]; then
+            local bios_count
+            bios_count="$(grep -c 'inst\.ks=' "$bios_cfg" 2>/dev/null || echo 0)"
+            info "BIOS config ($bios_candidate): $bios_count inst.ks= entries"
+            if [[ "$bios_count" -gt 1 ]]; then
+                error "Duplicate inst.ks= found in BIOS config ($bios_candidate):"
+                grep 'inst\.ks=' "$bios_cfg" >&2
+                rm -rf "$tmp_mount"
+                exit 1
+            fi
+        else
+            warn "No BIOS boot config found (isolinux.cfg / syslinux.cfg) — skipping BIOS check"
+        fi
+
+        # EFI: extract efiboot.img, then grub.cfg from inside it via mtools
+        local efi_img="${tmp_mount}/efiboot.img"
+        if osirrox -indev "$iso_path" -extract "/images/efiboot.img" "$efi_img" 2>/dev/null; then
+            local efi_grub=""
+            local efi_candidate
+            for efi_candidate in "::/EFI/BOOT/grub.cfg" "::/EFI/fedora/grub.cfg"; do
+                if mcopy -n -i "$efi_img" "$efi_candidate" "${tmp_mount}/efi-grub.cfg" 2>/dev/null; then
+                    efi_grub="${tmp_mount}/efi-grub.cfg"
+                    break
+                fi
+            done
+
+            if [[ -n "$efi_grub" ]]; then
+                local efi_count
+                efi_count="$(grep -c 'inst\.ks=' "$efi_grub" 2>/dev/null || echo 0)"
+                info "EFI grub.cfg ($efi_candidate): $efi_count inst.ks= entries"
+                if [[ "$efi_count" -gt 1 ]]; then
+                    error "Duplicate inst.ks= found in EFI grub.cfg ($efi_candidate):"
+                    grep 'inst\.ks=' "$efi_grub" >&2
+                    rm -rf "$tmp_mount"
+                    exit 1
+                fi
+            else
+                error "Cannot locate grub.cfg inside efiboot.img — cannot verify EFI boot config"
+                rm -rf "$tmp_mount"
+                exit 1
+            fi
+        else
+            warn "Cannot extract efiboot.img from ISO — skipping EFI check"
+        fi
+
+        rm -rf "$tmp_mount"
+        success "No duplicate inst.ks= entries in boot configs"
+    }
+
+    _verify_no_duplicate_inst_ks "$output_iso"
+
+    # -----------------------------------------------------------------------
+    # Patch efiboot.img when --skip-mkefiboot was used and -V changed the label
+    # -----------------------------------------------------------------------
+    if [[ "$needs_efi_patch" == true ]]; then
+        patch_efiboot_label "$output_iso" "SurfaceLinux-43"
+    fi
 
     # Clean up staging
     rm -rf "$staging"
