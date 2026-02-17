@@ -855,7 +855,7 @@ patch_efiboot_label() {
     local grub_path=""
     local candidate
     for candidate in "::/EFI/BOOT/grub.cfg" "::/EFI/fedora/grub.cfg"; do
-        if mcopy -n -i "$efi_img" "$candidate" /dev/null 2>/dev/null; then
+        if mcopy -i "$efi_img" "$candidate" /dev/null 2>/dev/null; then
             grub_path="$candidate"
             break
         fi
@@ -966,8 +966,8 @@ open(sys.argv[3], 'w').write(content)
     mcopy -i "$efi_img" "$grub_path" "$verify_file"
 
     local old_count new_count
-    old_count="$(grep -c "$old_label" "$verify_file" 2>/dev/null || echo 0)"
-    new_count="$(grep -c "$new_label" "$verify_file" 2>/dev/null || echo 0)"
+    old_count="$(grep -F -c -- "$old_label" "$verify_file" 2>/dev/null || true)"
+    new_count="$(grep -F -c -- "$new_label" "$verify_file" 2>/dev/null || true)"
 
     if [[ "$old_count" -ne 0 ]]; then
         error "Verification failed: old label '$old_label' still present ($old_count occurrences)"
@@ -1094,16 +1094,29 @@ stage_assemble_iso() {
     _probe_file="$(mktemp /tmp/loop-probe.XXXXXX)"
     truncate -s 1M "$_probe_file"
 
+    # Trap ensures cleanup on any exit path (SIGINT/SIGTERM/ERR) during probe.
+    # Saved/restored so we don't clobber the global ERR handler permanently.
+    _probe_cleanup() {
+        [[ -n "${_probe_loop:-}" ]] && losetup -d "$_probe_loop" 2>/dev/null || true
+        rm -f "${_probe_file:-}"
+    }
+    trap _probe_cleanup EXIT
+
     if _probe_loop="$(losetup --find --show "$_probe_file" 2>/dev/null)"; then
-        # Detach immediately — we only needed to test attachment
+        # Detach immediately -- we only needed to test attachment
         losetup -d "$_probe_loop" 2>/dev/null || true
+        _probe_loop=""
         _loop_probe_ok=true
         info "Loop device probe succeeded — mkefiboot will run normally"
     else
+        _probe_loop=""
         warn "Loop device attachment failed — adding --skip-mkefiboot"
     fi
-    # Always clean up probe temp file
+    # Explicit cleanup + remove trap (trap EXIT would fire at script end otherwise)
     rm -f "$_probe_file"
+    _probe_file=""
+    trap '_err_handler ${LINENO} "${BASH_COMMAND}" $?' ERR
+    trap - EXIT
 
     if [[ "$_loop_probe_ok" != true ]]; then
         mkksiso_flags+=(--skip-mkefiboot)
@@ -1206,11 +1219,11 @@ stage_assemble_iso() {
 
         if [[ -n "$bios_cfg" ]]; then
             local bios_count
-            bios_count="$(grep -c 'inst\.ks=' "$bios_cfg" 2>/dev/null || echo 0)"
+            bios_count="$(grep -F -c 'inst.ks=' "$bios_cfg" 2>/dev/null || true)"
             info "BIOS config ($bios_candidate): $bios_count inst.ks= entries"
             if [[ "$bios_count" -gt 1 ]]; then
                 error "Duplicate inst.ks= found in BIOS config ($bios_candidate):"
-                grep 'inst\.ks=' "$bios_cfg" >&2
+                grep -F 'inst.ks=' "$bios_cfg" >&2
                 rm -rf "$tmp_mount"
                 exit 1
             fi
@@ -1224,7 +1237,7 @@ stage_assemble_iso() {
             local efi_grub=""
             local efi_candidate
             for efi_candidate in "::/EFI/BOOT/grub.cfg" "::/EFI/fedora/grub.cfg"; do
-                if mcopy -n -i "$efi_img" "$efi_candidate" "${tmp_mount}/efi-grub.cfg" 2>/dev/null; then
+                if mcopy -i "$efi_img" "$efi_candidate" "${tmp_mount}/efi-grub.cfg" 2>/dev/null; then
                     efi_grub="${tmp_mount}/efi-grub.cfg"
                     break
                 fi
@@ -1232,11 +1245,11 @@ stage_assemble_iso() {
 
             if [[ -n "$efi_grub" ]]; then
                 local efi_count
-                efi_count="$(grep -c 'inst\.ks=' "$efi_grub" 2>/dev/null || echo 0)"
+                efi_count="$(grep -F -c 'inst.ks=' "$efi_grub" 2>/dev/null || true)"
                 info "EFI grub.cfg ($efi_candidate): $efi_count inst.ks= entries"
                 if [[ "$efi_count" -gt 1 ]]; then
                     error "Duplicate inst.ks= found in EFI grub.cfg ($efi_candidate):"
-                    grep 'inst\.ks=' "$efi_grub" >&2
+                    grep -F 'inst.ks=' "$efi_grub" >&2
                     rm -rf "$tmp_mount"
                     exit 1
                 fi
