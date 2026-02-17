@@ -660,9 +660,9 @@ stage_clone_lazy_nvim() {
 
     if [[ -d "$lazy_dir/.git" ]]; then
         info "lazy.nvim already cached, updating..."
-        git -C "$lazy_dir" fetch origin stable --depth=1
+        git -C "$lazy_dir" fetch --tags --force origin --depth=1
         git -C "$lazy_dir" checkout stable
-        git -C "$lazy_dir" reset --hard origin/stable
+        git -C "$lazy_dir" reset --hard stable
     else
         info "Cloning lazy.nvim (stable branch)..."
         rm -rf "$lazy_dir"
