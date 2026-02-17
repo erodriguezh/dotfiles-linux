@@ -31,9 +31,8 @@
 - [ ] Comments in `stage_validate_repo` (lines 516-541) fixed to reflect actual `--assumeno` semantics
 - [ ] CI cache key (`.github/workflows/build-iso.yml:79`) has version suffix to bust stale cache
 ## Done summary
-TBD
-
+Added --alldeps and --setopt=install_weak_deps=False to dnf5 download in stage_download_rpms to fix incomplete RPM downloads. Updated comments, docs (Containerfile, README), and CI cache key (-v2 suffix) for consistency.
 ## Evidence
-- Commits:
-- Tests:
+- Commits: 9afb0e0, f522923
+- Tests: RepoPrompt impl review: SHIP verdict
 - PRs:
