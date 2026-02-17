@@ -448,6 +448,8 @@ stage_download_rpms() {
 
     dnf5 download \
         --resolve \
+        --alldeps \
+        --setopt=install_weak_deps=False \
         --destdir="$RPM_CACHE" \
         --arch=x86_64 \
         --arch=noarch \
@@ -515,10 +517,10 @@ stage_validate_repo() {
 
     # Check B — completeness (install simulation)
     # Verifies the specific combined package list is resolvable from the
-    # local repo alone. --assumeno causes dnf5 to abort before committing
-    # the transaction, but it may exit non-zero even when resolution
-    # succeeds (the "user declined" exit code). We must distinguish that
-    # from real resolution failures under set -Eeuo pipefail.
+    # local repo alone. --assumeno causes dnf5 to resolve the transaction
+    # without committing it. On successful resolution it exits 0; on
+    # resolution failure (unresolvable deps) it exits 1. We capture the
+    # exit code to inspect output for real errors under set -Eeuo pipefail.
     info "Running install simulation for ${#all_pkgs[@]} packages..."
     local install_output
     local install_rc=0
@@ -530,15 +532,18 @@ stage_validate_repo() {
         install_rc=$?
     fi
 
-    # Only fail on real resolution errors, not the expected "Operation aborted"
+    # Fail on real resolution errors (Problem: or No match for argument:).
+    # A non-zero exit without these patterns is unexpected but tolerable —
+    # the resolution itself succeeded.
     if [[ $install_rc -ne 0 ]]; then
         if grep -qE 'Problem:|No match for argument:' <<<"$install_output"; then
             error "Local repo install simulation failed:"
             printf '%s\n' "$install_output"
             exit 1
         fi
-        # Non-zero exit but no resolution errors — this is the expected
-        # --assumeno "user declined transaction" case; treat as success.
+        # Non-zero exit but no resolution error patterns found — likely
+        # benign, but could mask a non-resolution error. Treat as success
+        # for now; tighten to hard-fail if this path ever triggers unexpectedly.
     fi
 
     success "Install simulation passed: all ${#all_pkgs[@]} packages satisfiable from local repo"

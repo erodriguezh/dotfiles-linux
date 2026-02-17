@@ -2,8 +2,9 @@
 #
 # Contains ONLY build tools (lorax/mkksiso, createrepo_c, etc.).
 # Target runtime packages (hyprland, ghostty, kernel-surface, ...) are
-# deliberately NOT installed here so that `dnf5 download --resolve` correctly
-# captures all transitive dependencies.
+# deliberately NOT installed here. The download stage uses
+# `dnf5 download --resolve --alldeps` to capture ALL transitive
+# dependencies regardless of what is installed in the container.
 
 FROM registry.fedoraproject.org/fedora:43
 
