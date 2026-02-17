@@ -841,7 +841,8 @@ patch_efiboot_label() {
     local work_dir
     work_dir="$(mktemp -d /tmp/efi-patch.XXXXXX)"
 
-    # Ensure work_dir is cleaned up on any exit path (including set -e failures)
+    # Clean up work_dir on function return (explicit rm -rf calls in error
+    # branches handle the exit paths; this trap covers implicit returns).
     trap 'rm -rf "$work_dir"' RETURN
 
     info "Patching efiboot.img volume label to '$new_label'..."
@@ -1094,17 +1095,17 @@ stage_assemble_iso() {
     local _loop_probe_ok=false
     local _probe_file=""
     local _probe_loop=""
-    _probe_file="$(mktemp /tmp/loop-probe.XXXXXX)"
-    truncate -s 1M "$_probe_file"
 
-    # Trap ensures cleanup on any exit path (SIGINT/SIGTERM/ERR) during probe.
-    # The EXIT trap is set for the probe duration, then cleared and the global
-    # ERR handler is re-established after cleanup completes.
+    # Install EXIT trap BEFORE mktemp/truncate so cleanup covers all paths,
+    # including early failures (disk full, etc.) under set -e.
     _probe_cleanup() {
         [[ -n "${_probe_loop:-}" ]] && losetup -d "$_probe_loop" 2>/dev/null || true
-        rm -f "${_probe_file:-}"
+        [[ -n "${_probe_file:-}" ]] && rm -f "$_probe_file"
     }
     trap _probe_cleanup EXIT
+
+    _probe_file="$(mktemp /tmp/loop-probe.XXXXXX)"
+    truncate -s 1M "$_probe_file"
 
     if _probe_loop="$(losetup --find --show "$_probe_file" 2>/dev/null)"; then
         # Detach immediately -- we only needed to test attachment
@@ -1116,10 +1117,8 @@ stage_assemble_iso() {
         _probe_loop=""
         warn "Loop device attachment failed — adding --skip-mkefiboot"
     fi
-    # Explicit cleanup + remove trap (trap EXIT would fire at script end otherwise)
-    rm -f "$_probe_file"
-    _probe_file=""
-    trap '_err_handler ${LINENO} "${BASH_COMMAND}" $?' ERR
+    # Explicit cleanup on normal path, then clear the EXIT trap
+    _probe_cleanup
     trap - EXIT
 
     if [[ "$_loop_probe_ok" != true ]]; then
