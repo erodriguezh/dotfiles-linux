@@ -1095,7 +1095,8 @@ stage_assemble_iso() {
     truncate -s 1M "$_probe_file"
 
     # Trap ensures cleanup on any exit path (SIGINT/SIGTERM/ERR) during probe.
-    # Saved/restored so we don't clobber the global ERR handler permanently.
+    # The EXIT trap is set for the probe duration, then cleared and the global
+    # ERR handler is re-established after cleanup completes.
     _probe_cleanup() {
         [[ -n "${_probe_loop:-}" ]] && losetup -d "$_probe_loop" 2>/dev/null || true
         rm -f "${_probe_file:-}"
@@ -1217,49 +1218,55 @@ stage_assemble_iso() {
             fi
         done
 
-        if [[ -n "$bios_cfg" ]]; then
-            local bios_count
-            bios_count="$(grep -F -c 'inst.ks=' "$bios_cfg" 2>/dev/null || true)"
-            info "BIOS config ($bios_candidate): $bios_count inst.ks= entries"
-            if [[ "$bios_count" -gt 1 ]]; then
-                error "Duplicate inst.ks= found in BIOS config ($bios_candidate):"
-                grep -F 'inst.ks=' "$bios_cfg" >&2
-                rm -rf "$tmp_mount"
-                exit 1
-            fi
-        else
-            warn "No BIOS boot config found (isolinux.cfg / syslinux.cfg) — skipping BIOS check"
+        # BIOS: must locate a config; hard-fail if neither found
+        if [[ -z "$bios_cfg" ]]; then
+            error "No BIOS boot config found (isolinux.cfg / syslinux.cfg) — cannot verify inst.ks="
+            rm -rf "$tmp_mount"
+            exit 1
+        fi
+
+        # Count occurrences (not lines) to catch same-line duplicates
+        local bios_count
+        bios_count="$(grep -oF 'inst.ks=' "$bios_cfg" 2>/dev/null | wc -l | tr -d '[:space:]')"
+        info "BIOS config ($bios_candidate): $bios_count inst.ks= occurrences"
+        if [[ "$bios_count" -ne 1 ]]; then
+            error "Expected exactly 1 inst.ks= in BIOS config ($bios_candidate), found $bios_count"
+            grep -F 'inst.ks=' "$bios_cfg" >&2 || true
+            rm -rf "$tmp_mount"
+            exit 1
         fi
 
         # EFI: extract efiboot.img, then grub.cfg from inside it via mtools
         local efi_img="${tmp_mount}/efiboot.img"
-        if osirrox -indev "$iso_path" -extract "/images/efiboot.img" "$efi_img" 2>/dev/null; then
-            local efi_grub=""
-            local efi_candidate
-            for efi_candidate in "::/EFI/BOOT/grub.cfg" "::/EFI/fedora/grub.cfg"; do
-                if mcopy -i "$efi_img" "$efi_candidate" "${tmp_mount}/efi-grub.cfg" 2>/dev/null; then
-                    efi_grub="${tmp_mount}/efi-grub.cfg"
-                    break
-                fi
-            done
+        if ! osirrox -indev "$iso_path" -extract "/images/efiboot.img" "$efi_img" 2>/dev/null; then
+            error "Cannot extract efiboot.img from ISO — cannot verify EFI boot config"
+            rm -rf "$tmp_mount"
+            exit 1
+        fi
 
-            if [[ -n "$efi_grub" ]]; then
-                local efi_count
-                efi_count="$(grep -F -c 'inst.ks=' "$efi_grub" 2>/dev/null || true)"
-                info "EFI grub.cfg ($efi_candidate): $efi_count inst.ks= entries"
-                if [[ "$efi_count" -gt 1 ]]; then
-                    error "Duplicate inst.ks= found in EFI grub.cfg ($efi_candidate):"
-                    grep -F 'inst.ks=' "$efi_grub" >&2
-                    rm -rf "$tmp_mount"
-                    exit 1
-                fi
-            else
-                error "Cannot locate grub.cfg inside efiboot.img — cannot verify EFI boot config"
-                rm -rf "$tmp_mount"
-                exit 1
+        local efi_grub=""
+        local efi_candidate
+        for efi_candidate in "::/EFI/BOOT/grub.cfg" "::/EFI/fedora/grub.cfg"; do
+            if mcopy -i "$efi_img" "$efi_candidate" "${tmp_mount}/efi-grub.cfg" 2>/dev/null; then
+                efi_grub="${tmp_mount}/efi-grub.cfg"
+                break
             fi
-        else
-            warn "Cannot extract efiboot.img from ISO — skipping EFI check"
+        done
+
+        if [[ -z "$efi_grub" ]]; then
+            error "Cannot locate grub.cfg inside efiboot.img — cannot verify EFI boot config"
+            rm -rf "$tmp_mount"
+            exit 1
+        fi
+
+        local efi_count
+        efi_count="$(grep -oF 'inst.ks=' "$efi_grub" 2>/dev/null | wc -l | tr -d '[:space:]')"
+        info "EFI grub.cfg ($efi_candidate): $efi_count inst.ks= occurrences"
+        if [[ "$efi_count" -ne 1 ]]; then
+            error "Expected exactly 1 inst.ks= in EFI grub.cfg ($efi_candidate), found $efi_count"
+            grep -F 'inst.ks=' "$efi_grub" >&2 || true
+            rm -rf "$tmp_mount"
+            exit 1
         fi
 
         rm -rf "$tmp_mount"
