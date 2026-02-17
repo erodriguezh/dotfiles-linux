@@ -1,0 +1,13 @@
+{
+  "branch_name": "fn-5-fix-stale-boot-iso-sha256-hash",
+  "created_at": "2026-02-17T08:57:20.760465Z",
+  "depends_on_epics": [],
+  "id": "fn-5-fix-stale-boot-iso-sha256-hash",
+  "next_task": 2,
+  "plan_review_status": "unknown",
+  "plan_reviewed_at": null,
+  "spec_path": ".flow/specs/fn-5-fix-stale-boot-iso-sha256-hash.md",
+  "status": "open",
+  "title": "Fix stale boot.iso SHA256 hash",
+  "updated_at": "2026-02-17T08:57:20.760825Z"
+}
