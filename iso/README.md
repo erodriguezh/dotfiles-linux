@@ -14,7 +14,7 @@ The ISO build system produces a single bootable ISO (~1.5 GB) that contains all 
 │                                                          │
 │ build-iso.sh (runs inside the container):                │
 │  1. Expand @^minimal-environment to package list         │
-│  2. dnf5 download --resolve to local RPM cache           │
+│  2. dnf5 download --resolve --alldeps to local RPM cache  │
 │  3. createrepo_c to build repo metadata                  │
 │  4. Dual validation (repoclosure + install simulation)    │
 │  5. Download: impala, bluetui, starship, JetBrains Mono  │
@@ -114,11 +114,11 @@ Downloads packages, creates the local repo, and runs repoclosure to verify all d
 
 2. **Extract target packages** -- Parses `lib/03-packages.sh` and `lib/02-kernel.sh` to build the list of packages the install script would normally install. This keeps the ISO's package list in sync with the manual install path.
 
-3. **Download RPMs** -- `dnf5 download --resolve` fetches all packages and their transitive dependencies to `/build/.cache/rpms/`. The build container has only build tools installed (no target packages), so `--resolve` correctly captures the full dependency tree.
+3. **Download RPMs** -- `dnf5 download --resolve --alldeps` fetches all packages and their transitive dependencies to `/build/.cache/rpms/`. The `--alldeps` flag is critical: it disables the system RPM database during resolution, ensuring ALL transitive deps are downloaded regardless of what is installed in the build container. `--setopt=install_weak_deps=False` excludes weak dependencies to match the kickstart's `--excludeWeakdeps` and keep the ISO lean.
 
 4. **Create local repo** -- `createrepo_c` generates repo metadata over the downloaded RPMs.
 
-5. **Repo validation** -- Two complementary checks verify the local repo is self-consistent and complete, using `--repofrompath` to create a transient repo (dnf5 does not support ad-hoc repo creation via `--setopt`). First, `dnf5 repoclosure` verifies every RPM's `Requires:` is satisfiable within the repo (structural integrity). Then, `dnf5 install --assumeno` verifies the specific combined package list can be resolved from the local repo alone (completeness). Both checks use `--setopt=reposdir=/dev/null` to isolate the local repo.
+5. **Repo validation** -- Two complementary checks verify the local repo is self-consistent and complete, using `--repofrompath` to create a transient repo (dnf5 does not support ad-hoc repo creation via `--setopt`). First, `dnf5 repoclosure` verifies every RPM's `Requires:` is satisfiable within the repo (structural integrity). Then, `dnf5 install --assumeno` verifies the specific combined package list can be resolved from the local repo alone (completeness); `--assumeno` exits 0 on successful resolution and 1 on failure, so the script inspects output for `Problem:` or `No match for argument:` to distinguish real errors. Both checks use `--setopt=reposdir=/dev/null` to isolate the local repo.
 
 6. **Download boot.iso** -- Fetches the Fedora 43 boot.iso (~800 MB) with SHA-256 verification. Cached between builds.
 

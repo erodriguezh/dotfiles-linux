@@ -76,7 +76,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .cache/rpms
-          key: fedora43-rpms-${{ hashFiles('lib/03-packages.sh', 'lib/02-kernel.sh') }}
+          key: fedora43-rpms-v2-${{ hashFiles('lib/03-packages.sh', 'lib/02-kernel.sh') }}
 
       # ----------------------------------------------------------------
       # Step 4: Cache boot ISO

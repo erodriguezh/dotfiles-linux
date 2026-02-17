@@ -1,0 +1,49 @@
+{
+  "created_at": "2026-02-16T20:48:56.652619Z",
+  "epic": {
+    "data": {
+      "branch_name": "fn-4-fix-incomplete-rpm-download-in-iso",
+      "completion_review_status": "unknown",
+      "completion_reviewed_at": null,
+      "created_at": "2026-02-16T20:47:13.947241Z",
+      "default_impl": null,
+      "default_review": null,
+      "default_sync": null,
+      "depends_on_epics": [
+        "fn-2-custom-offline-fedora-43-iso-builder"
+      ],
+      "id": "fn-4-fix-incomplete-rpm-download-in-iso",
+      "next_task": 1,
+      "plan_review_status": "unknown",
+      "plan_reviewed_at": null,
+      "spec_path": ".flow/specs/fn-4-fix-incomplete-rpm-download-in-iso.md",
+      "status": "open",
+      "title": "Fix incomplete RPM download in ISO builder",
+      "updated_at": "2026-02-16T20:47:59.672817Z"
+    },
+    "spec": "# Fix incomplete RPM download in ISO builder\n\n## Problem\n\n`iso/build-iso.sh` Stage 3 (`stage_download_rpms`, line 449) uses `dnf5 download --resolve` without the `--alldeps` flag. By default, `--resolve` resolves dependencies against the container's installed RPM database \u2014 packages already present in the `fedora:43` base image (glibc, bash, systemd, coreutils, filesystem, etc.) are silently skipped. The resulting local repo is missing hundreds of base-system RPMs.\n\nStage 5 (`stage_validate_repo`, line 509) then correctly catches this: `dnf5 repoclosure` finds unresolved `Requires:` and exits 1.\n\nError: `Command failed (exit 1) at line 509: dnf5 repoclosure --setopt=reposdir=/dev/null --repofrompath=local-only,\"file://${RPM_CACHE}\" --repo=local-only`\n\nThis blocks both CI validation (`--validate-only`) and full ISO builds.\n\n## Root cause\n\nConfirmed from dnf5 source (`download.cpp`): when `--resolve` is used WITHOUT `--alldeps`, the system repo is loaded (`context.set_load_system_repo(true)`), skipping already-installed packages. With `--alldeps`, the system repo is NOT loaded, so ALL transitive deps are downloaded regardless of container state.\n\n## Fix\n\n1. **Add `--alldeps` to `dnf5 download`** (`build-iso.sh:449`) \u2014 forces complete dependency resolution\n2. **Add `--setopt=install_weak_deps=False`** \u2014 aligns download with kickstart's `%packages --excludeWeakdeps` to avoid downloading hundreds of unnecessary weak-dep RPMs that would bloat the ISO\n3. **Fix misleading comments** in `stage_validate_repo` \u2014 `--assumeno` returns exit 0 on successful resolution (not non-zero as comments suggest); the code logic is correct but comments are wrong\n4. **Update Containerfile comment** (line 5) \u2014 current text says `--resolve` alone captures all transitive deps, which is the bug being fixed\n5. **Update iso/README.md** Stage 3 description (line 117) \u2014 document `--alldeps` and `--setopt=install_weak_deps=False`\n6. **Bust CI cache** \u2014 add `-v2` suffix to cache key in `.github/workflows/build-iso.yml:79` so the first `--alldeps` build gets a clean RPM cache\n\n## Scope\n\n**In scope**: `stage_download_rpms()`, comments in `stage_validate_repo()`, Containerfile comment, iso/README.md stage 3+5 descriptions, CI cache key\n\n**Out of scope**: RPM cache pruning (stale version accumulation), replacing `--assumeno` with `--downloadonly` in Check B (current logic works correctly), `createrepo_c --update` optimization, issue #971 workarounds\n\n## Known issues\n\n- [dnf5 #971](https://github.com/rpm-software-management/dnf5/issues/971): `download --resolve` resolves deps independently per-package, not as a transaction. Conditional deps like `(foo if bar)` may be missed. LOW priority, unlikely to affect this package set. The install simulation (Check B) provides a safety net.\n\n## Quick commands\n\n```bash\n# Build container and run validate-only (tests the fix)\npodman build -t surface-iso-builder -f iso/Containerfile iso/\npodman run --privileged --rm -v \"$(pwd):/build\" surface-iso-builder /build/iso/build-iso.sh --validate-only\n\n# Check RPM count (expect ~800-1200 with --alldeps, was ~400 before)\npodman run --privileged --rm -v \"$(pwd):/build\" surface-iso-builder \\\n    bash -c 'find /build/.cache/rpms -name \"*.rpm\" | wc -l'\n```\n\n## Acceptance\n\n- [ ] `dnf5 download` in `stage_download_rpms` uses `--alldeps` and `--setopt=install_weak_deps=False`\n- [ ] `--validate-only` passes: both repoclosure and install simulation succeed\n- [ ] Containerfile comment updated to reflect `--alldeps` requirement\n- [ ] iso/README.md Stage 3 and Stage 5 descriptions updated\n- [ ] CI cache key busted (version suffix added) for clean first build\n- [ ] Comments in `stage_validate_repo` accurately describe `--assumeno` exit-code behavior\n\n## References\n\n- [dnf5 download command](https://dnf5.readthedocs.io/en/latest/commands/download.8.html) \u2014 `--alldeps` flag\n- [dnf5 #971](https://github.com/rpm-software-management/dnf5/issues/971) \u2014 independent per-package resolution\n- [dnf5 repoclosure](https://dnf5.readthedocs.io/en/latest/dnf5_plugins/repoclosure.8.html) \u2014 exit codes\n- [Fedora QA Repoclosure Test](https://fedoraproject.org/wiki/QA:Testcase_Mediakit_Repoclosure) \u2014 validation methodology\n"
+  },
+  "epic_id": "fn-4-fix-incomplete-rpm-download-in-iso",
+  "schema_version": 2,
+  "tasks": [
+    {
+      "data": {
+        "assignee": null,
+        "claim_note": "",
+        "claimed_at": null,
+        "created_at": "2026-02-16T20:48:04.811395Z",
+        "depends_on": [],
+        "epic": "fn-4-fix-incomplete-rpm-download-in-iso",
+        "id": "fn-4-fix-incomplete-rpm-download-in-iso.1",
+        "priority": null,
+        "spec_path": ".flow/tasks/fn-4-fix-incomplete-rpm-download-in-iso.1.md",
+        "status": "todo",
+        "title": "Add --alldeps to dnf5 download and update docs",
+        "updated_at": "2026-02-16T20:48:22.759893Z"
+      },
+      "id": "fn-4-fix-incomplete-rpm-download-in-iso.1",
+      "runtime": null,
+      "spec": "# fn-4-fix-incomplete-rpm-download-in-iso.1 Add --alldeps to dnf5 download and update docs\n\n## Description\n`dnf5 download --resolve` in `stage_download_rpms()` (`iso/build-iso.sh:449`) resolves against the container's installed RPM database, skipping packages already present in the `fedora:43` base image. Add `--alldeps` to force complete dependency resolution, add `--setopt=install_weak_deps=False` to match kickstart's `--excludeWeakdeps`, fix misleading comments, and update docs.\n\n**Size:** M\n**Files:** `iso/build-iso.sh`, `iso/Containerfile`, `iso/README.md`, `.github/workflows/build-iso.yml`\n\n## Approach\n\n- Add `--alldeps --setopt=install_weak_deps=False` to `dnf5 download` at `iso/build-iso.sh:449-454`\n- Fix comments in `stage_validate_repo()` at `iso/build-iso.sh:516-541` \u2014 `--assumeno` returns exit 0 on successful resolution per dnf5 source, not non-zero as comments claim. The code logic is correct; only comments need fixing\n- Update Containerfile comment at line 4-6: clarify that `--alldeps` is required, not just `--resolve`\n- Update `iso/README.md:117` Stage 3 description: document `--alldeps` and weak-dep exclusion\n- Update `iso/README.md:121` Stage 5 description: fix `--assumeno` exit-code explanation\n- Add `-v2` suffix to CI cache key at `.github/workflows/build-iso.yml:79` to bust stale cache\n\n## Key context\n\n- dnf5 source (`download.cpp`): `--alldeps` sets `load_system_repo(false)`, `--resolve` alone sets it to `true`\n- Kickstart uses `%packages --excludeWeakdeps --excludedocs` at `iso/surface-go3-iso.ks:101`\n- `--assumeno` exit codes confirmed from dnf5 source: exit 0 on success, exit 1 on resolution failure\n- [dnf5 #971](https://github.com/rpm-software-management/dnf5/issues/971): download resolves deps independently per-package (LOW risk, mitigated by Check B install simulation)\n- RPM count will increase from ~400 to ~800-1200 with `--alldeps`; weak-dep exclusion keeps it closer to ~800\n## Acceptance\n- [ ] `stage_download_rpms` uses `dnf5 download --resolve --alldeps --setopt=install_weak_deps=False`\n- [ ] `--validate-only` passes in the build container (both repoclosure and install simulation)\n- [ ] Containerfile comment (lines 4-6) updated to mention `--alldeps` requirement\n- [ ] `iso/README.md` Stage 3 (line 117) documents `--alldeps` and weak-dep exclusion\n- [ ] `iso/README.md` Stage 5 (line 121) accurately describes `--assumeno` exit-code behavior\n- [ ] Comments in `stage_validate_repo` (lines 516-541) fixed to reflect actual `--assumeno` semantics\n- [ ] CI cache key (`.github/workflows/build-iso.yml:79`) has version suffix to bust stale cache\n## Done summary\nTBD\n\n## Evidence\n- Commits:\n- Tests:\n- PRs:\n"
+    }
+  ]
+}
