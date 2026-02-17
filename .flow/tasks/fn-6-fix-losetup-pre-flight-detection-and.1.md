@@ -132,3 +132,7 @@ Two commits within a single PR to reduce blast radius:
 - [ ] No duplicate `inst.ks` — BIOS verified via ISO filesystem config; EFI verified via efiboot.img mtools extraction
 - [ ] `iso/README.md` corrects misleading "safe" claim
 - [ ] `shellcheck iso/build-iso.sh` passes; CI unaffected
+
+## Done summary
+
+## Evidence
