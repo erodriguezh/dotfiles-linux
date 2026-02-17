@@ -31,3 +31,5 @@ Update the two hardcoded constants in `iso/build-iso.sh` (lines 35-36):
 - [ ] Both constants updated
 - [ ] `shellcheck iso/build-iso.sh` passes
 - [ ] No other changes to the file
+
+## Done summary
