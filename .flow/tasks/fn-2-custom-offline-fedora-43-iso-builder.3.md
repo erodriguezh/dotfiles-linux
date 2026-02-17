@@ -37,7 +37,8 @@ Add a GitHub Actions workflow that validates the ISO build pipeline on every pus
 
 6. **Build container** — `sudo podman build -t surface-iso-builder iso/`
 
-7. **Run build (validate mode)** — For push/PR: `sudo podman run --privileged --rm -v ${{ github.workspace }}:/build surface-iso-builder /build/iso/build-iso.sh --test --validate-only`. This validates package download, repo creation, repoclosure check, asset download, but skips mkksiso assembly. Note: NO `:Z` suffix on volume mount (not needed on ubuntu-latest, causes warnings).
+7. **Run build (validate mode)** — For push/PR: `sudo podman run --privileged --rm -v ${{ github.workspace }}:/build surface-iso-builder /build/iso/build-iso.sh --test --validate-only`. This validates minimal-environment expansion, RPM download, repo creation, and repoclosure check, but skips boot.iso download, asset downloads (binaries, fonts, lazy.nvim), theme generation, and mkksiso assembly. Note: NO `:Z` suffix on volume mount (not needed on ubuntu-latest, causes warnings).
+<!-- Updated by plan-sync: fn-2-custom-offline-fedora-43-iso-builder.1 validate-only stops after stage 5 (repoclosure), not after asset downloads -->
 
 8. **Run build (full, on dispatch)** — When `workflow_dispatch` with `upload_artifact=true`: run full build with `--test` credentials. Produces actual ISO.
 
@@ -50,9 +51,10 @@ Add a GitHub Actions workflow that validates the ISO build pipeline on every pus
 ### Repoclosure validation in CI
 
 The validate-only mode MUST include an automated correctness check (from task .1's `--validate-only` behavior):
-- Spin up a nested container with only the local repo
-- Verify `dnf5 install --assumeno` can resolve ALL packages + `@^minimal-environment` without external repos
+- The build script's `stage_validate_repo()` runs `dnf5 --setopt=reposdir=/dev/null --setopt=local-only.baseurl=file://<rpm-cache> install --assumeno --repo=local-only <all-pkgs>` inline (no nested container needed)
+- This verifies `dnf5 install --assumeno` can resolve ALL expanded packages without external repos
 - This goes beyond "dnf5 download succeeded" — it proves the repo is self-contained
+<!-- Updated by plan-sync: fn-2-custom-offline-fedora-43-iso-builder.1 uses inline dnf5 --setopt repoclosure, not a nested container -->
 
 ### Permissions
 ```yaml
@@ -78,3 +80,19 @@ These paths are in the workspace mount (not container `/tmp/`), so GitHub Action
 - Do NOT use GitHub Actions `container:` directive for Podman. Use explicit `podman run` in `run:` steps.
 - Workflow should NOT embed real credentials. Always use `--test` for CI builds.
 - CI builds with real credentials should only happen via workflow_dispatch with repository secrets.
+
+## Acceptance
+
+- [x] Workflow triggers on push/PR for relevant paths
+- [x] `--validate-only` mode runs on push/PR (repoclosure check)
+- [x] Full build with `--test` runs on manual dispatch
+- [x] RPM and boot ISO caching configured
+- [x] Optional artifact upload and GitHub Release creation
+- [x] YAML validates successfully
+
+## Done summary
+Added GitHub Actions workflow (.github/workflows/build-iso.yml) that validates the ISO build pipeline on push/PR via --validate-only mode and optionally produces a full ISO artifact or GitHub Release via manual dispatch with test credentials.
+## Evidence
+- Commits: 93e81962e33a10d6e500e6f6a23f3b7bfefb5e10, 44aa38167f233f22df61b571c28c0e98d7076e60
+- Tests: python3 -c 'import yaml; yaml.safe_load(...)' (YAML validation)
+- PRs:

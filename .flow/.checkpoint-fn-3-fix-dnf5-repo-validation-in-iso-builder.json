@@ -1,0 +1,47 @@
+{
+  "created_at": "2026-02-16T19:36:31.514164Z",
+  "epic": {
+    "data": {
+      "branch_name": "fn-3-fix-dnf5-repo-validation-in-iso-builder",
+      "completion_review_status": "unknown",
+      "completion_reviewed_at": null,
+      "created_at": "2026-02-16T19:35:03.817643Z",
+      "default_impl": null,
+      "default_review": null,
+      "default_sync": null,
+      "depends_on_epics": [],
+      "id": "fn-3-fix-dnf5-repo-validation-in-iso-builder",
+      "next_task": 1,
+      "plan_review_status": "unknown",
+      "plan_reviewed_at": null,
+      "spec_path": ".flow/specs/fn-3-fix-dnf5-repo-validation-in-iso-builder.md",
+      "status": "open",
+      "title": "Fix dnf5 repo validation in ISO builder",
+      "updated_at": "2026-02-16T19:35:33.444064Z"
+    },
+    "spec": "# Fix dnf5 repo validation in ISO builder\n\n## Problem\n\n`iso/build-iso.sh` Stage 5 (`stage_validate_repo()`, lines 496-504) uses `dnf5 --setopt=local-only.baseurl=...` to create an ad-hoc repo for offline validation. **dnf5 does not support creating new repos via `--setopt`** \u2014 this was a dnf4-only feature. dnf5's `--setopt=REPO_ID.key=value` can only modify existing repos, not create new ones.\n\nError: `No matching repositories for local-only, local-only, local-only, *, local-only`\n\nThis blocks:\n- CI validation (`--validate-only`) on every PR\n- Full ISO builds (manual and workflow_dispatch)\n\n## Fix\n\nReplace `--setopt`-based ad-hoc repo with `--repofrompath` (canonical dnf5 approach) and add proper `repoclosure` check.\n\n**`--repofrompath=REPO_ID,PATH`** creates a transient repo for a single command \u2014 no temp files, no cleanup needed. Combined with `--repo=REPO_ID` (restricts to only that repo) and `--setopt=reposdir=/dev/null` (prevents loading system repos).\n\nTwo complementary checks:\n1. `dnf5 repoclosure` \u2014 verifies every RPM's `Requires:` is satisfiable within the repo (internal consistency)\n2. `dnf5 install --assumeno` \u2014 verifies the specific package list can be resolved (completeness)\n\n### Critical: `--assumeno` exit code\n\nUnder `set -Eeuo pipefail` + ERR trap, non-zero exit kills the script. The `--assumeno` flag may exit 1 (user declined transaction) even when resolution succeeds. The fix must capture the exit code explicitly or use an alternative approach.\n\n## Scope\n\n- **In scope**: `stage_validate_repo()` in `iso/build-iso.sh`, iso/README.md stage 5 description\n- **Out of scope**: Other stages, temp file consolidation, DRY refactors (dedup loop)\n\n## Quick commands\n\n```bash\n# Build container and run validate-only (tests the fix)\npodman build -t surface-iso-builder -f iso/Containerfile iso/\npodman run --privileged --rm -v \"$(pwd):/build\" surface-iso-builder /build/iso/build-iso.sh --validate-only\n```\n\n## Acceptance\n\n- [ ] `stage_validate_repo()` uses `--repofrompath` instead of `--setopt` for repo creation\n- [ ] `dnf5 repoclosure` runs as structural integrity check\n- [ ] `dnf5 install --assumeno` runs with explicit exit-code handling (no false failures under `set -e`)\n- [ ] `--validate-only` passes in the build container\n- [ ] iso/README.md updated to reflect the new validation approach\n- [ ] No temp files created/leaked by the validation stage\n\n## References\n\n- [dnf5(8) --repofrompath](https://dnf5.readthedocs.io/en/latest/dnf5.8.html)\n- [dnf5 repoclosure plugin](https://dnf5.readthedocs.io/en/latest/dnf5_plugins/repoclosure.8.html)\n- [GitHub Issue #1082](https://github.com/rpm-software-management/dnf5/issues/1082) \u2014 Invalid REPO_ID now errors in dnf5\n- [Fedora QA Mediakit Repoclosure Test](https://fedoraproject.org/wiki/QA:Testcase_Mediakit_Repoclosure)\n"
+  },
+  "epic_id": "fn-3-fix-dnf5-repo-validation-in-iso-builder",
+  "schema_version": 2,
+  "tasks": [
+    {
+      "data": {
+        "assignee": null,
+        "claim_note": "",
+        "claimed_at": null,
+        "created_at": "2026-02-16T19:35:39.780264Z",
+        "depends_on": [],
+        "epic": "fn-3-fix-dnf5-repo-validation-in-iso-builder",
+        "id": "fn-3-fix-dnf5-repo-validation-in-iso-builder.1",
+        "priority": null,
+        "spec_path": ".flow/tasks/fn-3-fix-dnf5-repo-validation-in-iso-builder.1.md",
+        "status": "todo",
+        "title": "Replace --setopt with --repofrompath in stage_validate_repo and update docs",
+        "updated_at": "2026-02-16T19:36:02.764127Z"
+      },
+      "id": "fn-3-fix-dnf5-repo-validation-in-iso-builder.1",
+      "runtime": null,
+      "spec": "# fn-3-fix-dnf5-repo-validation-in-iso-builder.1 Replace --setopt with --repofrompath in stage_validate_repo and update docs\n\n## Description\nFix `stage_validate_repo()` in `iso/build-iso.sh` (lines 477-507) which fails because dnf5 does not support creating ad-hoc repos via `--setopt=REPO_ID.key=value`. Replace with `--repofrompath` \u2014 the canonical dnf5 approach for transient repos.\n\n**Size:** S\n**Files:** `iso/build-iso.sh`, `iso/README.md`\n\n## Approach\n\n### 1. Replace the dnf5 command block (lines 496-504)\n\nThe broken `--setopt` block must be replaced with two complementary checks using `--repofrompath`:\n\n**Check A \u2014 `repoclosure` (structural integrity):**\n- Uses `dnf5 repoclosure` with `--repofrompath=local-only,\"file://${RPM_CACHE}\"` and `--repo=local-only`\n- Add `--setopt=reposdir=/dev/null` to prevent loading system repos\n- Verifies every RPM's `Requires:` is satisfiable within the local repo\n- Exits 0 on success, 1 on unresolved deps \u2014 safe under `set -e`\n\n**Check B \u2014 `install --assumeno` (completeness):**\n- Verifies the specific combined package list (`${all_pkgs[@]}`) is resolvable\n- Uses same `--repofrompath` + `--repo` + `reposdir=/dev/null` flags\n- **Critical**: `--assumeno` may exit non-zero even on successful resolution (user declined). Must handle this under `set -e` \u2014 capture exit code explicitly or use subshell with output parsing\n- Pattern: capture output and rc, grep for \"Problem:\" or \"No match for argument:\" to distinguish real failures from the expected \"Operation aborted\" non-zero exit\n\n### 2. Update iso/README.md\n\n- Lines 119-121: update stage 5 description to mention `--repofrompath` and dual checks (repoclosure + install simulation)\n- Lines 202-208 (troubleshooting): if this section references `--setopt`, update accordingly\n\n## Key context\n\n- `--repofrompath=REPO_ID,PATH` \u2014 dnf5 docs: creates transient repo for single command. [dnf5(8)](https://dnf5.readthedocs.io/en/latest/dnf5.8.html)\n- `--repo=REPO_ID` \u2014 implicitly disables all other repos (equivalent to `--disablerepo='*' --enablerepo=REPO_ID`)\n- `dnf5-plugins` already installed in Containerfile (line 14) \u2014 provides `repoclosure` command\n- Script runs under `set -Eeuo pipefail` with ERR trap (lines 19-20, 70) \u2014 every non-zero exit is fatal\n- `RPM_CACHE=\"/build/.cache/rpms\"` (line 29) \u2014 hardcoded, no spaces\n- `repoclosure` does NOT check weak/optional deps by default \u2014 no false positives from `--excludeWeakdeps` downloads\n## Acceptance\n- [ ] `stage_validate_repo()` uses `--repofrompath=local-only,\"file://${RPM_CACHE}\"` instead of `--setopt=local-only.*` flags\n- [ ] `dnf5 repoclosure` runs with `--repo=local-only` and `--setopt=reposdir=/dev/null`\n- [ ] `dnf5 install --assumeno` runs with explicit exit-code handling (does not false-fail under `set -e`)\n- [ ] Both checks use `--repofrompath` (no temp .repo files created)\n- [ ] Comments in `stage_validate_repo()` explain why `--repofrompath` is used (dnf5 \u2260 dnf4)\n- [ ] `iso/README.md` stage 5 description updated to reflect `--repofrompath` + repoclosure\n- [ ] `--validate-only` mode completes successfully in build container\n## Done summary\nTBD\n\n## Evidence\n- Commits:\n- Tests:\n- PRs:\n"
+    }
+  ]
+}

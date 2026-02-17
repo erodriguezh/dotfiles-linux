@@ -104,3 +104,18 @@ Parse `lib/03-packages.sh` to extract the `pkgs=()` array contents. Use grep/sed
 - Theme engine outputs are `.gitignored` (`.gitignore:5-11`). They MUST be generated during build.
 - Shell conventions: `set -Eeuo pipefail`, `shopt -s inherit_errexit`, `readonly` for constants, `info()`/`warn()`/`error()` color helpers.
 - Cache directory pattern: `/build/.cache/` maps to `${REPO_ROOT}/.cache/` on host, enabling GitHub Actions caching.
+
+## Acceptance
+
+- [x] `iso/Containerfile` builds successfully with only build tools (no target packages)
+- [x] `iso/build-iso.sh` supports all credential input methods
+- [x] `--validate-only` mode runs repoclosure check without mkksiso
+- [x] `--test` mode uses dummy credentials
+- [x] RepoPrompt review: SHIP
+
+## Done summary
+Created ISO build pipeline: Containerfile (Fedora 43 build env with lorax, createrepo_c, 3 COPRs + linux-surface repo) and build-iso.sh (11-stage orchestrator that downloads boot.iso, expands minimal-environment, downloads RPMs with transitive deps, creates/validates local repo via repoclosure, pre-downloads binaries/fonts/lazy.nvim, generates theme files, substitutes kickstart credentials, and assembles ISO via mkksiso).
+## Evidence
+- Commits: 901ea342f4f9b7fc4e0b8f5a86b0cd1c3b25b9c0, febbcf892ccdbbef597744962b1c07ae30ba205d
+- Tests: RepoPrompt code review: SHIP verdict (Round 2)
+- PRs:

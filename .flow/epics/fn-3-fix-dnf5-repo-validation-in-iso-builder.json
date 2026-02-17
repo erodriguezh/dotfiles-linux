@@ -1,0 +1,18 @@
+{
+  "branch_name": "fn-3-fix-dnf5-repo-validation-in-iso-builder",
+  "completion_review_status": "ship",
+  "completion_reviewed_at": "2026-02-16T20:19:31.324716Z",
+  "created_at": "2026-02-16T19:35:03.817643Z",
+  "default_impl": null,
+  "default_review": null,
+  "default_sync": null,
+  "depends_on_epics": [],
+  "id": "fn-3-fix-dnf5-repo-validation-in-iso-builder",
+  "next_task": 1,
+  "plan_review_status": "ship",
+  "plan_reviewed_at": "2026-02-16T19:41:01.865786Z",
+  "spec_path": ".flow/specs/fn-3-fix-dnf5-repo-validation-in-iso-builder.md",
+  "status": "open",
+  "title": "Fix dnf5 repo validation in ISO builder",
+  "updated_at": "2026-02-16T20:19:31.325234Z"
+}
