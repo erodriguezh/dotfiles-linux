@@ -207,6 +207,23 @@ Stage 5 runs two checks. If **repoclosure** fails, a downloaded RPM has a `Requi
 
 Fix: Add the missing package to `lib/03-packages.sh` and rebuild.
 
+### mkksiso fails with losetup / mkefiboot error
+
+`mkksiso` calls `mkefiboot` which needs loop devices (`/dev/loop*`) to build the EFI boot image. Loop devices are unavailable in rootless Podman, macOS Docker, and some CI environments.
+
+The build script **automatically detects** this and adds `--skip-mkefiboot`, which reuses the EFI image from the source Fedora ISO. You'll see a warning in the output:
+
+```
+[WARN] Loop devices unavailable — adding --skip-mkefiboot (EFI image reused from source ISO)
+```
+
+This is safe — UEFI boot works correctly with the original EFI image. If you need the custom volume label in the EFI partition, use rootful Podman:
+
+```bash
+sudo podman run --privileged --rm -v "$PWD:/build" \
+  surface-iso-builder /build/iso/build-iso.sh [OPTIONS]
+```
+
 ### mkksiso fails with "ISO too large"
 
 The ISO must stay under 2 GiB for GitHub Release compatibility. The `--excludeWeakdeps --excludedocs` flags in `%packages` help. If the ISO still exceeds the limit, review the package list for removable weak dependencies.
