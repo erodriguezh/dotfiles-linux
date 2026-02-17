@@ -855,7 +855,7 @@ patch_efiboot_label() {
     local grub_path=""
     local candidate
     for candidate in "::/EFI/BOOT/grub.cfg" "::/EFI/fedora/grub.cfg"; do
-        if mcopy -i "$efi_img" "$candidate" /dev/null 2>/dev/null; then
+        if mcopy -o -i "$efi_img" "$candidate" /dev/null 2>/dev/null; then
             grub_path="$candidate"
             break
         fi
@@ -1247,7 +1247,7 @@ stage_assemble_iso() {
         local efi_grub=""
         local efi_candidate
         for efi_candidate in "::/EFI/BOOT/grub.cfg" "::/EFI/fedora/grub.cfg"; do
-            if mcopy -i "$efi_img" "$efi_candidate" "${tmp_mount}/efi-grub.cfg" 2>/dev/null; then
+            if mcopy -o -i "$efi_img" "$efi_candidate" "${tmp_mount}/efi-grub.cfg" 2>/dev/null; then
                 efi_grub="${tmp_mount}/efi-grub.cfg"
                 break
             fi
