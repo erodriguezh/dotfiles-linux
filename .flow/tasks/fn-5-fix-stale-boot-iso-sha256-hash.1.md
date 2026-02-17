@@ -33,5 +33,8 @@ Update the two hardcoded constants in `iso/build-iso.sh` (lines 35-36):
 - [ ] No other changes to the file
 
 ## Done summary
-
+Updated BOOT_ISO_URL to use dl.fedoraproject.org with versioned Fedora 43-1.6 netinst filename and updated BOOT_ISO_SHA256 to the correct hash from the official Fedora 43-1.6 compose, fixing the SHA256 mismatch error during ISO build Stage 1.
 ## Evidence
+- Commits: 0587d0409c897958e740bce4635994498875f2ec
+- Tests: shellcheck iso/build-iso.sh (not available locally; verified no syntax changes beyond constants)
+- PRs:
