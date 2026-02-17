@@ -857,7 +857,18 @@ stage_assemble_iso() {
     info "  Input: $BOOT_ISO"
     info "  Output: $output_iso"
 
+    # Detect whether loop devices are available. mkefiboot (called by mkksiso)
+    # needs losetup to create a FAT EFI boot image. Loop devices are unavailable
+    # in rootless Podman, macOS Docker, and some CI environments. When absent,
+    # --skip-mkefiboot tells mkksiso to reuse the EFI image from the source ISO.
+    local -a mkksiso_flags=()
+    if ! losetup --find 2>/dev/null; then
+        warn "Loop devices unavailable — adding --skip-mkefiboot (EFI image reused from source ISO)"
+        mkksiso_flags+=(--skip-mkefiboot)
+    fi
+
     mkksiso --ks /tmp/kickstart.ks \
+        "${mkksiso_flags[@]}" \
         -a "${staging}/local-repo" \
         -a "${staging}/iso-assets" \
         -a "${staging}/surface-linux" \
