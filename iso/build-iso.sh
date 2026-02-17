@@ -841,6 +841,9 @@ patch_efiboot_label() {
     local work_dir
     work_dir="$(mktemp -d /tmp/efi-patch.XXXXXX)"
 
+    # Ensure work_dir is cleaned up on any exit path (including set -e failures)
+    trap 'rm -rf "$work_dir"' RETURN
+
     info "Patching efiboot.img volume label to '$new_label'..."
 
     # Step A: Extract efiboot.img from the output ISO
@@ -1203,6 +1206,33 @@ stage_assemble_iso() {
     # -----------------------------------------------------------------------
     # Verify no duplicate inst.ks entries in boot configs
     # -----------------------------------------------------------------------
+    # Verify no line in a config file contains more than one inst.ks=,
+    # and at least one line contains inst.ks= (so it's not missing entirely).
+    # Multiple boot entries/menuentries each having their own inst.ks= is normal;
+    # the bug we're guarding against is duplicate tokens on the SAME cmdline.
+    _assert_no_dup_inst_ks_in_file() {
+        local path="$1"
+        local label="$2"
+        local any_found=0
+        local line
+        while IFS= read -r line; do
+            [[ "$line" == *inst.ks=* ]] || continue
+            any_found=1
+            local c
+            c="$(grep -oF 'inst.ks=' <<< "$line" | wc -l | tr -d '[:space:]')"
+            if [[ "$c" -gt 1 ]]; then
+                error "Duplicate inst.ks= on one cmdline in $label:"
+                error "  $line"
+                return 1
+            fi
+        done < "$path"
+        if [[ "$any_found" -eq 0 ]]; then
+            error "No inst.ks= found in $label"
+            return 1
+        fi
+        return 0
+    }
+
     _verify_no_duplicate_inst_ks() {
         local iso_path="$1"
         local tmp_mount
@@ -1225,16 +1255,11 @@ stage_assemble_iso() {
             exit 1
         fi
 
-        # Count occurrences (not lines) to catch same-line duplicates
-        local bios_count
-        bios_count="$(grep -oF 'inst.ks=' "$bios_cfg" 2>/dev/null | wc -l | tr -d '[:space:]')"
-        info "BIOS config ($bios_candidate): $bios_count inst.ks= occurrences"
-        if [[ "$bios_count" -ne 1 ]]; then
-            error "Expected exactly 1 inst.ks= in BIOS config ($bios_candidate), found $bios_count"
-            grep -F 'inst.ks=' "$bios_cfg" >&2 || true
+        if ! _assert_no_dup_inst_ks_in_file "$bios_cfg" "BIOS config ($bios_candidate)"; then
             rm -rf "$tmp_mount"
             exit 1
         fi
+        info "BIOS config ($bios_candidate): no duplicate inst.ks= on any cmdline"
 
         # EFI: extract efiboot.img, then grub.cfg from inside it via mtools
         local efi_img="${tmp_mount}/efiboot.img"
@@ -1259,15 +1284,11 @@ stage_assemble_iso() {
             exit 1
         fi
 
-        local efi_count
-        efi_count="$(grep -oF 'inst.ks=' "$efi_grub" 2>/dev/null | wc -l | tr -d '[:space:]')"
-        info "EFI grub.cfg ($efi_candidate): $efi_count inst.ks= occurrences"
-        if [[ "$efi_count" -ne 1 ]]; then
-            error "Expected exactly 1 inst.ks= in EFI grub.cfg ($efi_candidate), found $efi_count"
-            grep -F 'inst.ks=' "$efi_grub" >&2 || true
+        if ! _assert_no_dup_inst_ks_in_file "$efi_grub" "EFI grub.cfg ($efi_candidate)"; then
             rm -rf "$tmp_mount"
             exit 1
         fi
+        info "EFI grub.cfg ($efi_candidate): no duplicate inst.ks= on any cmdline"
 
         rm -rf "$tmp_mount"
         success "No duplicate inst.ks= entries in boot configs"
