@@ -23,8 +23,10 @@ shopt -s inherit_errexit
 # Constants
 # ---------------------------------------------------------------------------
 
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_DIR
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+readonly REPO_ROOT
 readonly CACHE_DIR="/build/.cache"
 readonly RPM_CACHE="${CACHE_DIR}/rpms"
 readonly ISO_CACHE="${CACHE_DIR}/isos"
@@ -141,6 +143,7 @@ resolve_credentials() {
     if [[ "$TEST_MODE" == true ]]; then
         USERNAME="testuser"
         # Pre-computed hash for "test" via openssl passwd -6 -salt testsalt
+        # shellcheck disable=SC2016
         PASSWORD_HASH='$6$testsalt$MKzbPFVB1VLv1NVFTjMGNOVOHN.3IsRpONqOdX4bXP4mXEDjKMaOFfAfZ3KabxqDpRjJbBMD7X00j0Y.YbkFV/'
         info "Test mode: using dummy credentials (username=testuser)"
         return
@@ -179,6 +182,7 @@ resolve_credentials() {
     fi
 
     # Basic validation: SHA-512 hashes start with $6$
+    # shellcheck disable=SC2016
     if [[ "$PASSWORD_HASH" != '$6$'* ]]; then
         warn "Password hash does not start with \$6\$ — expected SHA-512 crypt format"
     fi
@@ -874,10 +878,9 @@ patch_efiboot_label() {
     local grub_file="${work_dir}/grub.cfg"
     mcopy -i "$efi_img" "$grub_path" "$grub_file"
 
-    # Extract original label(s) from grub.cfg using python3 (guaranteed via lorax).
-    # Python script written to file via heredoc to eliminate bash quoting ambiguity.
-    local _py_extract="${work_dir}/extract_label.py"
-    cat > "$_py_extract" << 'PYEOF'
+    # Extract original label(s) from grub.cfg using python3 -c (python3 guaranteed via lorax).
+    local old_label
+    old_label="$(python3 -c "$(cat << 'PYEOF'
 import re, sys
 
 content = open(sys.argv[1]).read()
@@ -908,8 +911,7 @@ if len(labels) > 1:
 
 print(labels.pop(), end='')
 PYEOF
-    local old_label
-    old_label="$(python3 "$_py_extract" "$grub_file")"
+    )" "$grub_file")"
 
     if [[ "$old_label" == "__NO_LABEL_FOUND__" ]]; then
         error "No volume label found in grub.cfg — cannot patch efiboot.img"
@@ -931,10 +933,8 @@ PYEOF
         return 0
     fi
 
-    # Replace label using python3 with re.sub + re.escape (preserves quoting style).
-    # Python script written to file via heredoc to eliminate bash quoting ambiguity.
-    local _py_replace="${work_dir}/replace_label.py"
-    cat > "$_py_replace" << 'PYEOF'
+    # Replace label using python3 -c with re.sub + re.escape (preserves quoting style).
+    python3 -c "$(cat << 'PYEOF'
 import re, sys
 
 old = sys.argv[1]
@@ -958,7 +958,7 @@ for pat, repl in patterns:
 
 open(sys.argv[3], 'w').write(content)
 PYEOF
-    python3 "$_py_replace" "$old_label" "$new_label" "$grub_file"
+    )" "$old_label" "$new_label" "$grub_file"
 
     # Write back
     mcopy -o -i "$efi_img" "$grub_file" "$grub_path"
