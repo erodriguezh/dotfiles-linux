@@ -1,0 +1,14 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-02-18T12:23:13.835925Z",
+  "depends_on": [],
+  "epic": "fn-8-fix-efiboot-extraction-failure-in-skip",
+  "id": "fn-8-fix-efiboot-extraction-failure-in-skip.2",
+  "priority": null,
+  "spec_path": ".flow/tasks/fn-8-fix-efiboot-extraction-failure-in-skip.2.md",
+  "status": "todo",
+  "title": "Improve osirrox diagnostics across the script",
+  "updated_at": "2026-02-18T12:23:51.475559Z"
+}

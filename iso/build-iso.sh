@@ -846,8 +846,10 @@ _extract_inst_ks_from_iso() {
     trap 'rm -rf "$work_dir"; trap - RETURN' RETURN
 
     local grub_file="${work_dir}/grub.cfg"
-    if ! osirrox -indev "$iso_path" -extract "/EFI/BOOT/grub.cfg" "$grub_file" 2>/dev/null; then
+    local osirrox_err=""
+    if ! osirrox_err="$(osirrox -indev "$iso_path" -extract "/EFI/BOOT/grub.cfg" "$grub_file" 2>&1)"; then
         error "Cannot extract /EFI/BOOT/grub.cfg from ISO — cannot derive inst.ks= value"
+        [[ -n "$osirrox_err" ]] && error "  osirrox: $osirrox_err"
         return 1
     fi
 
@@ -947,6 +949,7 @@ patch_efiboot() {
     local iso_path="$1"
     local new_label="$2"
     local inst_ks_value="$3"
+    local boot_iso="${4:-}"
     local work_dir
     work_dir="$(mktemp -d /tmp/efi-patch.XXXXXX)"
 
@@ -956,11 +959,27 @@ patch_efiboot() {
 
     info "Patching efiboot.img: label='$new_label', inst.ks='$inst_ks_value'..."
 
-    # Step A: Extract efiboot.img from the output ISO
+    # Step A: Extract efiboot.img from the output ISO (fall back to boot ISO)
+    # When --skip-mkefiboot is active, efiboot.img may not be a visible ISO 9660
+    # entry in the output ISO (mkksiso stores it only as an El Torito partition).
+    # The original boot ISO always has it as a standard filesystem entry.
     local efi_img="${work_dir}/efiboot.img"
-    if ! osirrox -indev "$iso_path" -extract /images/efiboot.img "$efi_img" 2>/dev/null; then
-        error "Failed to extract efiboot.img from ISO"
-        return 1
+    local extract_err=""
+    if ! extract_err="$(osirrox -indev "$iso_path" -extract /images/efiboot.img "$efi_img" 2>&1)"; then
+        if [[ -n "$boot_iso" && -f "$boot_iso" ]]; then
+            info "  /images/efiboot.img not in output ISO — extracting from original boot ISO"
+            if ! extract_err="$(osirrox -indev "$boot_iso" -extract /images/efiboot.img "$efi_img" 2>&1)"; then
+                error "Failed to extract efiboot.img from both output and boot ISO"
+                [[ -n "$extract_err" ]] && error "  osirrox: $extract_err"
+                return 1
+            fi
+        else
+            error "Failed to extract efiboot.img from ISO"
+            [[ -n "$extract_err" ]] && error "  osirrox: $extract_err"
+            return 1
+        fi
+    else
+        info "  Extracted efiboot.img from output ISO"
     fi
 
     # Step B: Discover grub.cfg inside the FAT image
@@ -1303,8 +1322,10 @@ PYEOF
 
     # Step F: Post-rewrite spot-check — verify ISO-level EFI grub.cfg survived xorriso
     local spot_check="${work_dir}/spot-check-grub.cfg"
-    if ! osirrox -indev "$iso_path" -extract "/EFI/BOOT/grub.cfg" "$spot_check" 2>/dev/null; then
+    local spot_err=""
+    if ! spot_err="$(osirrox -indev "$iso_path" -extract "/EFI/BOOT/grub.cfg" "$spot_check" 2>&1)"; then
         error "Post-rewrite spot-check failed: /EFI/BOOT/grub.cfg missing from ISO after xorriso"
+        [[ -n "$spot_err" ]] && error "  osirrox: $spot_err"
         return 1
     fi
     if ! grep -q 'inst\.ks=' "$spot_check" 2>/dev/null; then
@@ -1580,8 +1601,10 @@ PYEOF
 
         # ISO-level EFI: /EFI/BOOT/grub.cfg — required (mkksiso EditGrub2 always modifies this)
         local iso_efi_grub="${tmp_mount}/efi-boot-grub.cfg"
-        if ! osirrox -indev "$iso_path" -extract "/EFI/BOOT/grub.cfg" "$iso_efi_grub" 2>/dev/null; then
+        local efi_grub_err=""
+        if ! efi_grub_err="$(osirrox -indev "$iso_path" -extract "/EFI/BOOT/grub.cfg" "$iso_efi_grub" 2>&1)"; then
             error "ISO-level /EFI/BOOT/grub.cfg not found — mkksiso may have failed"
+            [[ -n "$efi_grub_err" ]] && error "  osirrox: $efi_grub_err"
             return 1
         fi
 
@@ -1616,8 +1639,10 @@ PYEOF
 
         # Extract efiboot.img from ISO
         local efi_img="${tmp_mount}/efiboot.img"
-        if ! osirrox -indev "$iso_path" -extract "/images/efiboot.img" "$efi_img" 2>/dev/null; then
+        local efiboot_err=""
+        if ! efiboot_err="$(osirrox -indev "$iso_path" -extract "/images/efiboot.img" "$efi_img" 2>&1)"; then
             error "Cannot extract efiboot.img from ISO — cannot verify EFI internal boot config"
+            [[ -n "$efiboot_err" ]] && error "  osirrox: $efiboot_err"
             return 1
         fi
 
@@ -1663,7 +1688,7 @@ PYEOF
         fi
         info "Derived inst.ks= value from ISO: $inst_ks_value"
 
-        if ! patch_efiboot "$output_iso" "SurfaceLinux-43" "$inst_ks_value"; then
+        if ! patch_efiboot "$output_iso" "SurfaceLinux-43" "$inst_ks_value" "$BOOT_ISO"; then
             error "efiboot.img patching failed — aborting"
             exit 1
         fi
