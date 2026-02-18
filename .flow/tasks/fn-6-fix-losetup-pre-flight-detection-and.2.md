@@ -121,3 +121,5 @@ _verify_inst_ks_efiboot "$output_iso"
 - [ ] `iso/README.md` updated with three-layer verification model + `inst.ks=` injection docs
 - [ ] `shellcheck iso/build-iso.sh` passes
 - [ ] Diffs kept surgical — no unrelated refactors in Stage 11
+
+## Done summary
