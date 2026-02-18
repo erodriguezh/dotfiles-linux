@@ -25,9 +25,8 @@ Add `rm -f` cleanup for the output ISO and its `.sha256` sidecar before the firs
 - [ ] `iso/README.md` troubleshooting section has entry explaining re-run behavior (mkksiso has no --force, script auto-removes stale output)
 - [ ] `README.md` Path B section notes that re-running build-iso.sh is safe
 ## Done summary
-TBD
-
+Added rm -f cleanup for output ISO and .sha256 sidecar before mkksiso invocation in stage_assemble_iso(), making same-day re-runs idempotent. Updated iso/README.md troubleshooting section and README.md Path B with re-run safety documentation.
 ## Evidence
-- Commits:
-- Tests:
+- Commits: ee0ee09, 4a7d48c
+- Tests: shellcheck iso/build-iso.sh (not available in this env)
 - PRs:
