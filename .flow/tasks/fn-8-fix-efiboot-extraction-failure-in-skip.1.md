@@ -27,9 +27,8 @@ Add optional 4th parameter `boot_iso` to `patch_efiboot()` and implement extract
 - [ ] Call site passes `$BOOT_ISO` as 4th argument
 
 ## Done summary
-TBD
-
+Added optional 4th parameter `boot_iso` to `patch_efiboot()` with fallback extraction logic: tries output ISO first, falls back to original boot ISO when efiboot.img is not a visible ISO 9660 entry (as happens with --skip-mkefiboot). osirrox stderr is now captured and displayed on failure instead of being swallowed. Call site updated to pass $BOOT_ISO.
 ## Evidence
-- Commits:
-- Tests:
+- Commits: 89fd3781c7b85d68ea3d00de9af09f01acedb495
+- Tests: manual: reviewed diff for correctness, RP code review SHIP
 - PRs:
