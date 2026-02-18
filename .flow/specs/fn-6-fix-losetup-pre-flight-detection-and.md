@@ -6,57 +6,75 @@ The ISO builder's losetup pre-flight check (PR #4, commit `2788642`) is too weak
 
 Additionally, when `--skip-mkefiboot` activates and `-V "SurfaceLinux-43"` changes the ISO volume label, the efiboot.img's internal grub.cfg still references the original Fedora label. On UEFI USB boot, GRUB searches for a volume with the old label, fails to find it, and boot breaks. The current README incorrectly claims this path is safe.
 
+**Post-fn-6.1 discovery**: The `_verify_no_duplicate_inst_ks()` function hard-fails looking for `isolinux.cfg`/`syslinux.cfg`, which Fedora 43 does not ship (BIOS boot uses GRUB2 since Fedora 37). Additionally, when `--skip-mkefiboot` is active, the efiboot.img's internal grub.cfg lacks `inst.ks=` injection and has stale `hd:LABEL=` references.
+
 ## Scope
 
-- Strengthen the losetup pre-flight to test actual loop device attachment, with defense-in-depth retry on mkefiboot failure (tight substring match, max 1 retry, partial ISO cleanup before retry, both attempts' stderr on failure)
-- Add `mtools` to the Containerfile for loop-free FAT image manipulation
-- When `--skip-mkefiboot` is active, detect appended EFI partition via `xorriso -report_system_area plain` with explicit decision table (4 cases); use `python3 -c` with `re.sub` + `re.escape()` for label replacement (python3 guaranteed via lorax)
-- Fix duplicate `inst.ks` entries; verify EFI config via efiboot.img mtools extraction (the actual config UEFI firmware reads)
-- Re-implant ISO media checksum (`implantisomd5`) and regenerate sha256 after any post-mkksiso ISO rewrite
-- Correct iso/README.md troubleshooting section
+**Phase 1 (fn-6.1 — done):**
+- Strengthen losetup pre-flight to test actual loop device attachment
+- Defense-in-depth retry on mkefiboot failure
+- Add `mtools` to Containerfile
+- `patch_efiboot_label` for volume label fixup in efiboot.img (`search --label`/`-l` lines)
+- Duplicate `inst.ks` detection framework
+
+**Phase 2 (fn-6.2 — new):**
+- Fix BIOS config verification to use GRUB2 paths (`boot/grub2/grub.cfg`) instead of isolinux/syslinux
+- Add ISO-level `EFI/BOOT/grub.cfg` verification — **required** (hard-fail if missing)
+- BIOS config is **best-effort** (warn if missing) — Surface Go 3 is UEFI-only
+- Restructure verification timing: ISO-level configs pre-patch, efiboot.img post-patch
+- Expand efiboot.img patching: replace label in known patterns (`search --label`/`-l`, `hd:LABEL=`) + inject `inst.ks=` into installer `linux`/`linuxefi` stanzas (only those with `inst.stage2=`)
+- Derive `inst.ks=` value from the already-injected ISO-level `EFI/BOOT/grub.cfg` (don't hardcode filename — discover what mkksiso actually injected)
+- Handle GRUB `\` line continuations for logical kernel cmdline stanzas
+- Rename `patch_efiboot_label` → `patch_efiboot` to reflect expanded scope
 
 ## Quick commands
 
 ```bash
-# Build ISO in container (the fix target)
+# Build ISO in container
 sudo podman build -t surface-iso-builder -f iso/Containerfile iso/
 sudo podman run --rm -v "$PWD:/build:Z" surface-iso-builder /build/iso/build-iso.sh --validate-only
 
-# ShellCheck the script
+# ShellCheck
 shellcheck iso/build-iso.sh
 
-# Verify final ISO EFI boot config (probe both known paths)
-osirrox -indev output.iso -extract /images/efiboot.img /tmp/efiboot-check.img
-mcopy -n -i /tmp/efiboot-check.img ::/EFI/BOOT/grub.cfg /tmp/efi-grub-check.cfg 2>/dev/null \
-  || mcopy -n -i /tmp/efiboot-check.img ::/EFI/fedora/grub.cfg /tmp/efi-grub-check.cfg
-cat /tmp/efi-grub-check.cfg
-
-# Verify ISO boot structure and appended partitions
-xorriso -indev output.iso -report_el_torito as_mkisofs
-xorriso -indev output.iso -report_system_area plain
+# Verify ISO boot configs (all three layers)
+osirrox -indev output.iso -extract /boot/grub2/grub.cfg /tmp/bios-grub.cfg
+osirrox -indev output.iso -extract /EFI/BOOT/grub.cfg /tmp/efi-grub.cfg
+osirrox -indev output.iso -extract /images/efiboot.img /tmp/efiboot.img
+mcopy -n -i /tmp/efiboot.img ::/EFI/BOOT/grub.cfg /tmp/efi-internal-grub.cfg 2>/dev/null \
+  || mcopy -n -i /tmp/efiboot.img ::/EFI/fedora/grub.cfg /tmp/efi-internal-grub.cfg
+grep inst.ks= /tmp/bios-grub.cfg /tmp/efi-grub.cfg /tmp/efi-internal-grub.cfg
 ```
 
 ## Acceptance
 
 - [ ] `losetup --find --show <tempfile>` used as the pre-flight probe (actual attachment test)
 - [ ] Probe cleans up temp file and detaches loop device via trap on all exit paths
-- [ ] Defense-in-depth: mkksiso mkefiboot/losetup failure (tight substring match) triggers max-once retry; partial ISO removed before retry; both stderr logs preserved; non-matching errors fail immediately
+- [ ] Defense-in-depth: mkksiso mkefiboot/losetup failure triggers max-once retry
 - [ ] `mtools` added to `iso/Containerfile`
-- [ ] grub.cfg inside efiboot.img discovered by direct `mcopy` existence probes; build hard-fails if not found
-- [ ] Label extracted via regex supporting `--label`/`-l`, quoted/unquoted; hard-fails if no label or multiple distinct labels
-- [ ] Label replacement uses `python3 -c` with `re.sub` + `re.escape()`; post-replacement verification confirms old label gone, new present
-- [ ] Appended EFI partition: xorriso non-zero → hard-fail; exactly one `Partition N ... type 0xEF` → replace at N; no match → `-update` only; >1 indices → hard-fail
-- [ ] No duplicate `inst.ks` — BIOS via ISO filesystem; EFI via efiboot.img mtools extraction
+- [ ] EFI label patching: grub.cfg discovered via `mcopy` probes, label replaced via `python3 -c` with `re.sub`
+- [ ] Appended EFI partition: xorriso decision table (4 cases) for re-injection
+- [ ] BIOS verification uses `boot/grub2/grub.cfg` (+ `boot/grub/grub.cfg` fallback); **warn** if absent
+- [ ] ISO-level `EFI/BOOT/grub.cfg` **required** (hard-fail if missing); verified for `inst.ks=`
+- [ ] efiboot.img patching: label replaced in known patterns (`search --label`/`-l`, `hd:LABEL=`), NOT blanket global replace
+- [ ] efiboot.img patching: `inst.ks=` value derived from ISO-level EFI grub.cfg (what mkksiso injected), not hardcoded
+- [ ] efiboot.img patching: `inst.ks=` injected only into installer entries (those containing `inst.stage2=`), handling `\` line continuations
+- [ ] Post-patch verification: efiboot.img has correct label AND exactly one `inst.ks=` per installer stanza
+- [ ] Post-patch spot-check: ISO-level `EFI/BOOT/grub.cfg` still intact after xorriso rewrite
+- [ ] No duplicate `inst.ks=` in any boot config layer
 - [ ] `implantisomd5` re-run after ISO rewrite; sha256 regenerated
-- [ ] `iso/README.md` corrects "safe" claim; CI unaffected
+- [ ] `iso/README.md` updated
 - [ ] `shellcheck iso/build-iso.sh` passes
+- [ ] Keep diffs surgical — avoid stacking unrelated refactors into Stage 11
 
 ## References
 
 - PR #4 (commit `2788642`): original losetup skip fix
-- lorax issue #1046: volume label mismatch breaks UEFI USB boot
-- Arch Linux archiso MR !72: migration from loop-mount to mtools
-- linuxkit/linuxkit `make-efi`: production mtools-based EFI image building
-- `iso/build-iso.sh:860-878`: current losetup check + mkksiso invocation
-- `iso/Containerfile:12-21`: build tool installation
-- `iso/README.md:210-225`: troubleshooting section
+- lorax `mkksiso.py` source: `EditGrub2()` handles `EFI/BOOT/grub.cfg`, `boot/grub2/grub.cfg`, `boot/grub/grub.cfg`
+- lorax `EditIsolinux()`: gracefully skips when isolinux.cfg absent
+- lorax `known_configs`: `isolinux/isolinux.cfg`, `boot/grub2/grub.cfg`, `boot/grub/grub.cfg`, `EFI/BOOT/grub.cfg`, `EFI/BOOT/BOOT.conf`
+- lorax `MakeKickstartISO()`: `inst.ks=hd:LABEL=<volid>:/<ks_basename>` injected via `add_args`
+- Fedora Changes/BIOSBootISOWithGrub2: isolinux removed in Fedora 37
+- `iso/build-iso.sh:1228-1287`: verification function
+- `iso/build-iso.sh:842-1046`: `patch_efiboot_label` function
+- `iso/build-iso.sh:1289-1299`: verify → patch execution order
