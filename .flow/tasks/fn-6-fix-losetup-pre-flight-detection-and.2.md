@@ -123,5 +123,8 @@ _verify_inst_ks_efiboot "$output_iso"
 - [ ] Diffs kept surgical — no unrelated refactors in Stage 11
 
 ## Done summary
-
+Fixed BIOS/EFI boot config verification and expanded efiboot.img patching: replaced isolinux/syslinux lookup with GRUB2 paths (warn-only for BIOS), added required ISO-level /EFI/BOOT/grub.cfg check, split verification into pre-patch and post-patch phases, renamed patch_efiboot_label to patch_efiboot with hd:LABEL= normalization and inst.ks= injection into installer stanzas (continuation-aware), plus post-rewrite spot-check.
 ## Evidence
+- Commits: 8bd8695, c81d86b, fd3d7d7, 296fc81
+- Tests: shellcheck iso/build-iso.sh
+- PRs:
