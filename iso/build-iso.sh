@@ -876,6 +876,8 @@ if buf:
 
 # Find linux/linuxefi cmdlines in installer stanzas (those with inst.stage2=)
 inst_ks_values = set()
+installer_count = 0
+missing_ks_count = 0
 for ll in logical_lines:
     # Match linux or linuxefi commands
     if not re.match(r'\s*(linux|linuxefi)\s', ll):
@@ -883,14 +885,23 @@ for ll in logical_lines:
     # Must be an installer stanza (contains inst.stage2=)
     if 'inst.stage2=' not in ll:
         continue
+    installer_count += 1
     # Extract inst.ks= token(s)
+    found_ks = False
     tokens = ll.split()
     for token in tokens:
         if token.startswith('inst.ks='):
             inst_ks_values.add(token)
+            found_ks = True
+    if not found_ks:
+        missing_ks_count += 1
 
 if not inst_ks_values:
     print('__NO_INST_KS__', end='')
+    sys.exit(0)
+
+if missing_ks_count > 0:
+    print('__PARTIAL_INST_KS__:' + str(missing_ks_count) + '/' + str(installer_count), end='')
     sys.exit(0)
 
 if len(inst_ks_values) > 1:
@@ -903,6 +914,12 @@ PYEOF
 
     if [[ "$result" == "__NO_INST_KS__" ]]; then
         error "No inst.ks= found in ISO /EFI/BOOT/grub.cfg installer stanzas"
+        return 1
+    fi
+
+    if [[ "$result" == __PARTIAL_INST_KS__:* ]]; then
+        local partial_info="${result#__PARTIAL_INST_KS__:}"
+        error "Not all installer stanzas have inst.ks= in ISO /EFI/BOOT/grub.cfg: $partial_info missing"
         return 1
     fi
 
@@ -989,6 +1006,12 @@ for line in content.splitlines():
             labels.add(m.group(1))
             break  # first match wins per line
 
+# Fallback: if no search --label/-l found, try hd:LABEL= in inst.stage2=/inst.ks=
+if not labels:
+    hd_label_pat = r'inst\.(?:stage2|ks)=hd:LABEL=([^\s:/]+)'
+    for m in re.finditer(hd_label_pat, content):
+        labels.add(m.group(1))
+
 if not labels:
     print('__NO_LABEL_FOUND__', end='')
     sys.exit(0)
@@ -1061,12 +1084,14 @@ if old_label != new_label:
 # --- Phase 3: Inject inst.ks= into installer stanzas ---
 # Process line-by-line, joining \ continuations into logical lines,
 # then inject inst.ks= only into stanzas with inst.stage2=.
+# Use rstrip() (strip all trailing whitespace) consistently when checking
+# for backslash continuations — matches the verify script's behavior.
 lines = content.splitlines(True)  # keep line endings
 output_lines = []
 i = 0
 while i < len(lines):
     line = lines[i]
-    stripped = line.rstrip('\n').rstrip('\r')
+    stripped = line.rstrip()
 
     # Check if this is a linux/linuxefi command line
     if re.match(r'\s*(linux|linuxefi)\s', stripped):
@@ -1075,12 +1100,12 @@ while i < len(lines):
         while stripped.endswith('\\') and i + 1 < len(lines):
             i += 1
             physical_lines.append(lines[i])
-            stripped = lines[i].rstrip('\n').rstrip('\r')
+            stripped = lines[i].rstrip()
 
         # Join into a single logical line for analysis
         logical = ""
         for pl in physical_lines:
-            s = pl.rstrip('\n').rstrip('\r')
+            s = pl.rstrip()
             if s.endswith('\\'):
                 logical += s[:-1] + " "
             else:
@@ -1092,7 +1117,7 @@ while i < len(lines):
             if 'inst.ks=' not in logical:
                 # Inject inst.ks= at end of logical cmdline.
                 # Reconstruct physical lines with injection.
-                last_pl = physical_lines[-1].rstrip('\n').rstrip('\r')
+                last_pl = physical_lines[-1].rstrip()
                 if last_pl.endswith('\\'):
                     # Continuation: add inst.ks before the backslash
                     physical_lines[-1] = last_pl[:-1].rstrip() + \
@@ -1213,13 +1238,16 @@ PYEOF
         return 1
     fi
 
-    # Parse for appended EFI partitions: lines with "Partition N ... type 0xEF"
+    # Parse for appended EFI partitions: lines with "Partition N ... 0xEF"
+    # Match 0xEF broadly (robust to varying xorriso output formatting/casing)
     local -a efi_indices=()
+    local partition_count=0
     local xline
     while IFS= read -r xline; do
         if [[ "$xline" =~ ^Partition[[:space:]]+([0-9]+) ]]; then
             local _part_idx="${BASH_REMATCH[1]}"
-            if [[ "$xline" =~ type[[:space:]]+0x[Ee][Ff] ]]; then
+            partition_count=$((partition_count + 1))
+            if [[ "$xline" =~ 0x[Ee][Ff] ]]; then
                 efi_indices+=("$_part_idx")
             fi
         fi
@@ -1242,7 +1270,11 @@ PYEOF
         error "Multiple distinct EFI partition indices found: ${unique_idx[*]}"
         error "Ambiguous — cannot safely re-inject efiboot.img"
         return 1
-    elif [[ ${#unique_idx[@]} -eq 1 ]]; then
+    elif [[ ${#unique_idx[@]} -eq 0 && $partition_count -gt 0 ]]; then
+        info "  Found $partition_count partition(s) but none matched EFI signature (0xEF)"
+    fi
+
+    if [[ ${#unique_idx[@]} -eq 1 ]]; then
         local efi_idx="${unique_idx[0]}"
         info "  Appended EFI partition found at index $efi_idx — re-injecting with -append_partition"
         xorriso -indev "$iso_path" -outdev "$fixed_iso" \
@@ -1431,27 +1463,58 @@ stage_assemble_iso() {
     # -----------------------------------------------------------------------
     # Verify no duplicate inst.ks entries in boot configs
     # -----------------------------------------------------------------------
-    # Verify no line in a config file contains more than one inst.ks=,
-    # and at least one line contains inst.ks= (so it's not missing entirely).
-    # Multiple boot entries/menuentries each having their own inst.ks= is normal;
-    # the bug we're guarding against is duplicate tokens on the SAME cmdline.
+    # Continuation-aware: joins GRUB \ continuation lines into logical
+    # cmdlines before checking for duplicates. Multiple boot entries each
+    # having their own inst.ks= is normal; the bug we guard against is
+    # duplicate inst.ks= tokens on the SAME logical linux/linuxefi cmdline.
     _assert_no_dup_inst_ks_in_file() {
         local path="$1"
         local label="$2"
-        local any_found=0
-        local line
-        while IFS= read -r line; do
-            [[ "$line" == *inst.ks=* ]] || continue
-            any_found=1
-            local c
-            c="$(grep -oF 'inst.ks=' <<< "$line" | wc -l | tr -d '[:space:]')"
-            if [[ "$c" -gt 1 ]]; then
-                error "Duplicate inst.ks= on one cmdline in $label:"
-                error "  $line"
-                return 1
-            fi
-        done < "$path"
-        if [[ "$any_found" -eq 0 ]]; then
+        local result
+        result="$(python3 -c "$(cat << 'PYEOF'
+import sys
+
+filepath = sys.argv[1]
+content = open(filepath).read()
+
+# Join backslash-continuation lines into logical lines
+lines = content.splitlines()
+logical_lines = []
+buf = ""
+for line in lines:
+    stripped = line.rstrip()
+    if stripped.endswith("\\"):
+        buf += stripped[:-1] + " "
+    else:
+        buf += stripped
+        logical_lines.append(buf)
+        buf = ""
+if buf:
+    logical_lines.append(buf)
+
+any_found = False
+for ll in logical_lines:
+    c = ll.count("inst.ks=")
+    if c > 0:
+        any_found = True
+    if c > 1:
+        print("DUP:" + ll.strip(), end="")
+        sys.exit(0)
+
+if not any_found:
+    print("MISSING", end="")
+else:
+    print("OK", end="")
+PYEOF
+        )" "$path")"
+
+        if [[ "$result" == DUP:* ]]; then
+            local dup_line="${result#DUP:}"
+            error "Duplicate inst.ks= on one logical cmdline in $label:"
+            error "  $dup_line"
+            return 1
+        fi
+        if [[ "$result" == "MISSING" ]]; then
             error "No inst.ks= found in $label"
             return 1
         fi
