@@ -1,7 +1,7 @@
 {
   "branch_name": "fn-7-make-build-isosh-idempotent-for-re-runs",
-  "completion_review_status": "unknown",
-  "completion_reviewed_at": null,
+  "completion_review_status": "ship",
+  "completion_reviewed_at": "2026-02-18T10:29:44.900379Z",
   "created_at": "2026-02-18T09:42:45.493512Z",
   "default_impl": null,
   "default_review": null,
@@ -17,5 +17,5 @@
   "spec_path": ".flow/specs/fn-7-make-build-isosh-idempotent-for-re-runs.md",
   "status": "open",
   "title": "Make build-iso.sh idempotent for re-runs",
-  "updated_at": "2026-02-18T09:47:49.703784Z"
+  "updated_at": "2026-02-18T10:29:44.901980Z"
 }
