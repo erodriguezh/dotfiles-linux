@@ -1,7 +1,7 @@
 {
   "branch_name": "fn-9-extract-efibootimg-via-el-torito-when",
-  "completion_review_status": "unknown",
-  "completion_reviewed_at": null,
+  "completion_review_status": "ship",
+  "completion_reviewed_at": "2026-02-18T17:10:41.137471Z",
   "created_at": "2026-02-18T13:58:03.881365Z",
   "default_impl": null,
   "default_review": null,
@@ -16,5 +16,5 @@
   "spec_path": ".flow/specs/fn-9-extract-efibootimg-via-el-torito-when.md",
   "status": "open",
   "title": "Extract efiboot.img via El Torito when ISO 9660 entry missing",
-  "updated_at": "2026-02-18T14:08:29.326061Z"
+  "updated_at": "2026-02-18T17:10:41.138091Z"
 }

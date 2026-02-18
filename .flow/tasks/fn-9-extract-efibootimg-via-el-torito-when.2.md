@@ -24,9 +24,8 @@ Follow the existing documentation style in `iso/README.md` — concise, factual,
 - [ ] Consistent with surrounding documentation style
 
 ## Done summary
-TBD
-
+Updated iso/README.md step 1 in the "mkksiso fails with losetup / mkefiboot error" section to describe the three-tier efiboot.img extraction fallback chain (output ISO filesystem, boot ISO filesystem, El Torito boot catalog) with a brief explanation of why Fedora 43 requires El Torito extraction and what El Torito is.
 ## Evidence
-- Commits:
-- Tests:
+- Commits: 56d850229ed8e2f59e3a6f7a1b71511f5ae2f40d, f1926b6764e21fd397e24731132f3945666e443c
+- Tests: documentation review via RepoPrompt
 - PRs:
