@@ -50,9 +50,8 @@ Follow the existing fn-8 stderr capture pattern at `iso/build-iso.sh:967-983`.
 - [ ] Full ISO build succeeds end-to-end in Podman with loop device probe failure
 
 ## Done summary
-TBD
-
+Added three-tier El Torito extraction fallback to patch_efiboot() Step A: when both filesystem-level osirrox extractions fail, extracts El Torito boot images via osirrox -extract_boot_images (with xorriso fallback), identifies the EFI image by probing all extracted regular files with mcopy for both grub.cfg paths, and hard-fails on zero or multiple matches with diagnostic output.
 ## Evidence
-- Commits:
-- Tests:
+- Commits: 9d6f1c2, 5e6897b, bd7a497
+- Tests: bash -n iso/build-iso.sh (pre-existing heredoc parse limitation)
 - PRs:
