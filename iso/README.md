@@ -243,6 +243,16 @@ sudo podman run --privileged --rm -v "$PWD:/build" \
   surface-iso-builder /build/iso/build-iso.sh [OPTIONS]
 ```
 
+### Re-running build-iso.sh on the same day
+
+Safe by design. `mkksiso` has no `--force` or `--overwrite` flag and will refuse to write to an output path that already exists. The build script handles this automatically by removing any previous `surface-linux-F43-YYYYMMDD-x86_64.iso` (and its `.sha256` sidecar) before invoking `mkksiso`. You will see an info log when a previous build is detected:
+
+```
+[INFO]  Removing previous build: surface-linux-F43-20260218-x86_64.iso
+```
+
+No manual cleanup is needed between re-runs.
+
 ### mkksiso fails with "ISO too large"
 
 The ISO must stay under 2 GiB for GitHub Release compatibility. The `--excludeWeakdeps --excludedocs` flags in `%packages` help. If the ISO still exceeds the limit, review the package list for removable weak dependencies.

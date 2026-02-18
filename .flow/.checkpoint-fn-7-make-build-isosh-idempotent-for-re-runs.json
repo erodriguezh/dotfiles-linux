@@ -1,0 +1,50 @@
+{
+  "created_at": "2026-02-18T09:44:18.986615Z",
+  "epic": {
+    "data": {
+      "branch_name": "fn-7-make-build-isosh-idempotent-for-re-runs",
+      "completion_review_status": "unknown",
+      "completion_reviewed_at": null,
+      "created_at": "2026-02-18T09:42:45.493512Z",
+      "default_impl": null,
+      "default_review": null,
+      "default_sync": null,
+      "depends_on_epics": [
+        "fn-6-fix-losetup-pre-flight-detection-and",
+        "fn-2-custom-offline-fedora-43-iso-builder"
+      ],
+      "id": "fn-7-make-build-isosh-idempotent-for-re-runs",
+      "next_task": 1,
+      "plan_review_status": "unknown",
+      "plan_reviewed_at": null,
+      "spec_path": ".flow/specs/fn-7-make-build-isosh-idempotent-for-re-runs.md",
+      "status": "open",
+      "title": "Make build-iso.sh idempotent for re-runs",
+      "updated_at": "2026-02-18T09:43:48.784812Z"
+    },
+    "spec": "# Make build-iso.sh idempotent for re-runs\n\n## Problem\n\n`mkksiso` (lorax) refuses to write to an output path that already exists and has **no `--force` or `--overwrite` flag**. When `build-iso.sh` is run twice on the same day, Stage 11 fails:\n\n```\n[ERROR] mkksiso failed (exit 1)\nERROR:/build/output/surface-linux-F43-20260218-x86_64.iso already exists\n```\n\nThe retry path at L1436 already does `rm -f \"$output_iso\"` before retrying, but the **first** mkksiso invocation (L1406) has no such pre-cleanup. The date-stamped filename guarantees same-day collisions.\n\n## Scope\n\nMinimal \u2014 one code change + doc updates:\n\n1. Add `rm -f \"$output_iso\" \"${output_iso}.sha256\"` after the output path is defined (~L1334) and before any mkksiso invocation\n2. Add conditional info log when removing a previous build\n3. Update `iso/README.md` troubleshooting section\n4. Update `README.md` Path B with re-run safety note\n\n**Out of scope:**\n- Cleaning old date-stamped ISOs (different-day accumulation)\n- `createrepo_c --update` optimization (Stage 4 works, just slower)\n- Concurrent build locking (unsupported use case)\n\n## Quick commands\n\n```bash\n# Build ISO (should succeed on re-runs now)\npodman run --privileged --rm -v \"$PWD:/build\" \\\n  surface-iso-builder /build/iso/build-iso.sh --username=edu --password-hash-file=/tmp/hash.txt\n\n# Verify idempotency: run twice, second run should not fail\npodman run --privileged --rm -v \"$PWD:/build\" \\\n  surface-iso-builder /build/iso/build-iso.sh --username=edu --password-hash-file=/tmp/hash.txt\n```\n\n## Key context\n\n- mkksiso source (`weldr/lorax` `src/pylorax/cmdline/mkksiso.py` ~L488) explicitly checks `os.path.exists(args.output_iso)` and errors \u2014 no workaround flag exists\n- `rm -f` before mkksiso is the universal pattern (confirmed in 8/8 GitHub repos using mkksiso in scripts)\n- All other stages (1, 6, 7, 8, 9) are already idempotent \u2014 Stage 11 is the only blocker\n- The retry path at L1436 already uses this exact pattern, confirming it is established in the codebase\n\n## Acceptance\n\n- [ ] Re-running `build-iso.sh` with the same output dir does not fail on \"already exists\"\n- [ ] Info log emitted when removing a previous build\n- [ ] `.sha256` sidecar is also cleaned before rebuild\n- [ ] Retry path at L1436 remains unchanged (defense-in-depth)\n- [ ] `iso/README.md` documents re-run behavior\n- [ ] `README.md` Path B notes that re-runs are safe\n\n## References\n\n- `iso/build-iso.sh:1327-1340` \u2014 Stage 11 entry, output path construction\n- `iso/build-iso.sh:1406-1414` \u2014 First mkksiso invocation (no pre-cleanup)\n- `iso/build-iso.sh:1436` \u2014 Retry path (has `rm -f`, the pattern to replicate)\n- `iso/build-iso.sh:1679` \u2014 `.sha256` sidecar generation\n- [mkksiso docs](https://weldr.io/lorax/mkksiso.html)\n- [mkksiso source \u2014 exists check](https://github.com/weldr/lorax/blob/master/src/pylorax/cmdline/mkksiso.py)\n"
+  },
+  "epic_id": "fn-7-make-build-isosh-idempotent-for-re-runs",
+  "schema_version": 2,
+  "tasks": [
+    {
+      "data": {
+        "assignee": null,
+        "claim_note": "",
+        "claimed_at": null,
+        "created_at": "2026-02-18T09:43:24.763820Z",
+        "depends_on": [],
+        "epic": "fn-7-make-build-isosh-idempotent-for-re-runs",
+        "id": "fn-7-make-build-isosh-idempotent-for-re-runs.1",
+        "priority": null,
+        "spec_path": ".flow/tasks/fn-7-make-build-isosh-idempotent-for-re-runs.1.md",
+        "status": "todo",
+        "title": "Remove stale output ISO before mkksiso and update docs",
+        "updated_at": "2026-02-18T09:43:41.942989Z"
+      },
+      "id": "fn-7-make-build-isosh-idempotent-for-re-runs.1",
+      "runtime": null,
+      "spec": "# fn-7-make-build-isosh-idempotent-for-re-runs.1 Remove stale output ISO before mkksiso and update docs\n\n## Description\nAdd `rm -f` cleanup for the output ISO and its `.sha256` sidecar before the first `mkksiso` invocation in `stage_assemble_iso()`. Update docs to reflect that re-runs are safe.\n\n**Size:** S\n**Files:** `iso/build-iso.sh`, `iso/README.md`, `README.md`\n\n## Approach\n\n- Follow the existing pattern at `iso/build-iso.sh:1436` (retry path already does `rm -f \"$output_iso\"`)\n- Add conditional `info` log when a previous build is detected (matches logging style used throughout the script)\n- Also clean `${output_iso}.sha256` to prevent stale checksums surviving a rebuild\n- Keep the retry path cleanup at L1436 as-is (harmless defense-in-depth)\n\n## Key context\n\n- `mkksiso` has NO `--force`/`--overwrite` flag \u2014 confirmed from lorax source code (`os.path.exists()` check at ~L488 of `mkksiso.py`)\n- The `rm -f` + rebuild pattern is used by every open-source project that scripts mkksiso (Red Hat microshift-demos, etc.)\n- The `.sha256` sidecar at L1679 uses `>` redirect (would overwrite), but it never runs if mkksiso fails first\n## Acceptance\n- [ ] `rm -f \"$output_iso\" \"${output_iso}.sha256\"` added after output_iso is defined (~L1334) and before staging/mkksiso work begins\n- [ ] Conditional info log: `Removing previous build: $(basename \"$output_iso\")` when file exists\n- [ ] Retry path `rm -f` at L1436 remains unchanged\n- [ ] `iso/README.md` troubleshooting section has entry explaining re-run behavior (mkksiso has no --force, script auto-removes stale output)\n- [ ] `README.md` Path B section notes that re-running build-iso.sh is safe\n## Done summary\nTBD\n\n## Evidence\n- Commits:\n- Tests:\n- PRs:\n"
+    }
+  ]
+}
