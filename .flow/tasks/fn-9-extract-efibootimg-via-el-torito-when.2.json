@@ -1,0 +1,16 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-02-18T13:59:12.336206Z",
+  "depends_on": [
+    "fn-9-extract-efibootimg-via-el-torito-when.1"
+  ],
+  "epic": "fn-9-extract-efibootimg-via-el-torito-when",
+  "id": "fn-9-extract-efibootimg-via-el-torito-when.2",
+  "priority": null,
+  "spec_path": ".flow/tasks/fn-9-extract-efibootimg-via-el-torito-when.2.md",
+  "status": "todo",
+  "title": "Update iso/README.md for El Torito extraction fallback",
+  "updated_at": "2026-02-18T13:59:36.631277Z"
+}
