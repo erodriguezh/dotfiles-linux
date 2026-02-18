@@ -21,7 +21,7 @@ Add `rm -f` cleanup for the output ISO and its `.sha256` sidecar before the firs
 ## Acceptance
 - [ ] `rm -f "$output_iso" "${output_iso}.sha256"` added after output_iso is defined (~L1334) and before staging/mkksiso work begins
 - [ ] Conditional info log: `Removing previous build: $(basename "$output_iso")` when file exists
-- [ ] Retry path `rm -f` at L1436 remains unchanged
+- [ ] No `mkksiso` invocation occurs before the pre-cleanup
 - [ ] `iso/README.md` troubleshooting section has entry explaining re-run behavior (mkksiso has no --force, script auto-removes stale output)
 - [ ] `README.md` Path B section notes that re-running build-iso.sh is safe
 ## Done summary

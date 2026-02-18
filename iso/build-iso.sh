@@ -1335,7 +1335,7 @@ stage_assemble_iso() {
 
     # Remove any previous build output — mkksiso has no --force/--overwrite
     # flag and refuses to write to an existing path.
-    if [[ -f "$output_iso" ]]; then
+    if [[ -f "$output_iso" || -f "${output_iso}.sha256" ]]; then
         info "Removing previous build: $(basename "$output_iso")"
     fi
     rm -f "$output_iso" "${output_iso}.sha256"
