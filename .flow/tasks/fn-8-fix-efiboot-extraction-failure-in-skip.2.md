@@ -37,9 +37,8 @@ fi
 - [ ] Non-critical extractions (Apple EFI) still suppress stderr
 
 ## Done summary
-TBD
-
+Replaced `2>/dev/null` with stderr capture (`2>&1` into variable) on four critical osirrox extraction calls across `_extract_inst_ks_from_iso`, `patch_efiboot` post-rewrite spot-check, `_verify_inst_ks_iso_configs` (EFI grub.cfg), and `_verify_inst_ks_efiboot`. Non-critical probe paths (BIOS candidate loop and Apple EFI BOOT.conf) correctly retain `2>/dev/null`.
 ## Evidence
-- Commits:
-- Tests:
+- Commits: 8310748258206db72f37006f441264861e48605c
+- Tests: bash -n iso/build-iso.sh (pre-existing syntax error confirmed not introduced by this change)
 - PRs:

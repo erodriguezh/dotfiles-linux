@@ -1,7 +1,7 @@
 {
   "branch_name": "fn-8-fix-efiboot-extraction-failure-in-skip",
-  "completion_review_status": null,
-  "completion_reviewed_at": null,
+  "completion_review_status": "ship",
+  "completion_reviewed_at": "2026-02-18T12:45:03.032970Z",
   "created_at": "2026-02-18T12:00:00.000000Z",
   "default_impl": null,
   "default_review": null,
@@ -17,5 +17,5 @@
   "spec_path": ".flow/specs/fn-8-fix-efiboot-extraction-failure-in-skip.md",
   "status": "open",
   "title": "Fix efiboot.img extraction failure when --skip-mkefiboot is active",
-  "updated_at": "2026-02-18T12:00:00.000000Z"
+  "updated_at": "2026-02-18T12:45:03.033602Z"
 }
