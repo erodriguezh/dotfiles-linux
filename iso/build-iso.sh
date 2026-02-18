@@ -947,6 +947,7 @@ patch_efiboot() {
     local iso_path="$1"
     local new_label="$2"
     local inst_ks_value="$3"
+    local boot_iso="${4:-}"
     local work_dir
     work_dir="$(mktemp -d /tmp/efi-patch.XXXXXX)"
 
@@ -956,11 +957,27 @@ patch_efiboot() {
 
     info "Patching efiboot.img: label='$new_label', inst.ks='$inst_ks_value'..."
 
-    # Step A: Extract efiboot.img from the output ISO
+    # Step A: Extract efiboot.img from the output ISO (fall back to boot ISO)
+    # When --skip-mkefiboot is active, efiboot.img may not be a visible ISO 9660
+    # entry in the output ISO (mkksiso stores it only as an El Torito partition).
+    # The original boot ISO always has it as a standard filesystem entry.
     local efi_img="${work_dir}/efiboot.img"
-    if ! osirrox -indev "$iso_path" -extract /images/efiboot.img "$efi_img" 2>/dev/null; then
-        error "Failed to extract efiboot.img from ISO"
-        return 1
+    local extract_err=""
+    if ! extract_err="$(osirrox -indev "$iso_path" -extract /images/efiboot.img "$efi_img" 2>&1)"; then
+        if [[ -n "$boot_iso" && -f "$boot_iso" ]]; then
+            info "  /images/efiboot.img not in output ISO — extracting from original boot ISO"
+            if ! extract_err="$(osirrox -indev "$boot_iso" -extract /images/efiboot.img "$efi_img" 2>&1)"; then
+                error "Failed to extract efiboot.img from both output and boot ISO"
+                [[ -n "$extract_err" ]] && error "  osirrox: $extract_err"
+                return 1
+            fi
+        else
+            error "Failed to extract efiboot.img from ISO"
+            [[ -n "$extract_err" ]] && error "  osirrox: $extract_err"
+            return 1
+        fi
+    else
+        info "  Extracted efiboot.img from output ISO"
     fi
 
     # Step B: Discover grub.cfg inside the FAT image
@@ -1663,7 +1680,7 @@ PYEOF
         fi
         info "Derived inst.ks= value from ISO: $inst_ks_value"
 
-        if ! patch_efiboot "$output_iso" "SurfaceLinux-43" "$inst_ks_value"; then
+        if ! patch_efiboot "$output_iso" "SurfaceLinux-43" "$inst_ks_value" "$BOOT_ISO"; then
             error "efiboot.img patching failed — aborting"
             exit 1
         fi
