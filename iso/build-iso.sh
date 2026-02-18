@@ -1007,7 +1007,7 @@ patch_efiboot() {
                     local probe_file grub_candidate
                     while IFS= read -r -d '' probe_file; do
                         for grub_candidate in "::/EFI/BOOT/grub.cfg" "::/EFI/fedora/grub.cfg"; do
-                            if mcopy -i "$probe_file" "$grub_candidate" /dev/null 2>/dev/null; then
+                            if mcopy -o -i "$probe_file" "$grub_candidate" /dev/null 2>/dev/null; then
                                 efi_candidates+=("$probe_file")
                                 candidate_grub_paths+=("$grub_candidate")
                                 break  # one match per file is enough
