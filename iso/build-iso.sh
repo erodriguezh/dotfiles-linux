@@ -1113,19 +1113,23 @@ while i < len(lines):
 
         # Only modify installer stanzas (those with inst.stage2=)
         if 'inst.stage2=' in logical:
-            # Check if inst.ks= already present
-            if 'inst.ks=' not in logical:
+            if 'inst.ks=' in logical:
+                # Replace any existing inst.ks= with the correct value.
+                # This handles stale/incorrect values from the original ISO.
+                new_physical = []
+                for pl in physical_lines:
+                    # Replace inst.ks=<anything> tokens on this line
+                    new_pl = re.sub(r'inst\.ks=\S+', inst_ks, pl)
+                    new_physical.append(new_pl)
+                physical_lines = new_physical
+            else:
                 # Inject inst.ks= at end of logical cmdline.
-                # Reconstruct physical lines with injection.
                 last_pl = physical_lines[-1].rstrip()
                 if last_pl.endswith('\\'):
-                    # Continuation: add inst.ks before the backslash
                     physical_lines[-1] = last_pl[:-1].rstrip() + \
                         ' ' + inst_ks + ' \\\n'
                 else:
-                    # Last line: append inst.ks at end
                     physical_lines[-1] = last_pl + ' ' + inst_ks + '\n'
-            # If inst.ks= is already present, leave as-is
         output_lines.extend(physical_lines)
     else:
         output_lines.append(line)
@@ -1190,17 +1194,21 @@ if buf:
 installer_count = 0
 missing_ks = 0
 dup_ks = 0
+wrong_ks = 0
 for ll in logical_lines:
     if not re.match(r'\s*(linux|linuxefi)\s', ll):
         continue
     if 'inst.stage2=' not in ll:
         continue
     installer_count += 1
-    ks_count = ll.count('inst.ks=')
-    if ks_count == 0:
+    # Extract all inst.ks= tokens from this stanza
+    ks_tokens = [t for t in ll.split() if t.startswith('inst.ks=')]
+    if len(ks_tokens) == 0:
         missing_ks += 1
-    elif ks_count > 1:
+    elif len(ks_tokens) > 1:
         dup_ks += 1
+    elif ks_tokens[0] != inst_ks:
+        wrong_ks += 1
 
 if installer_count == 0:
     errors.append("No installer stanzas found (linux/linuxefi with inst.stage2=)")
@@ -1208,6 +1216,8 @@ if missing_ks > 0:
     errors.append(f"{missing_ks} installer stanza(s) missing inst.ks=")
 if dup_ks > 0:
     errors.append(f"{dup_ks} installer stanza(s) have duplicate inst.ks=")
+if wrong_ks > 0:
+    errors.append(f"{wrong_ks} installer stanza(s) have wrong inst.ks= value (expected {inst_ks})")
 
 if errors:
     print('FAIL:' + '|'.join(errors), end='')
@@ -1239,12 +1249,12 @@ PYEOF
     fi
 
     # Parse for appended EFI partitions: lines with "Partition N ... 0xEF"
-    # Match 0xEF broadly (robust to varying xorriso output formatting/casing)
+    # Tolerant of leading whitespace, case variations, and formatting changes.
     local -a efi_indices=()
     local partition_count=0
     local xline
     while IFS= read -r xline; do
-        if [[ "$xline" =~ ^Partition[[:space:]]+([0-9]+) ]]; then
+        if [[ "$xline" =~ ^[[:space:]]*[Pp]artition[[:space:]]+([0-9]+) ]]; then
             local _part_idx="${BASH_REMATCH[1]}"
             partition_count=$((partition_count + 1))
             if [[ "$xline" =~ 0x[Ee][Ff] ]]; then
