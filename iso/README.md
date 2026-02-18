@@ -132,7 +132,12 @@ Downloads packages, creates the local repo, and runs repoclosure to verify all d
 
 11. **Substitute credentials** -- Replaces `@@USERNAME@@` and `@@PASSWORD_HASH@@` placeholders in the ISO kickstart template.
 
-12. **Assemble ISO** -- `mkksiso` embeds the kickstart, local repo, assets, and surface-linux repo into the Fedora boot.iso. Generates a SHA-256 checksum file alongside the output ISO.
+12. **Assemble ISO** -- `mkksiso` embeds the kickstart, local repo, assets, and surface-linux repo into the Fedora boot.iso. After assembly, a three-layer verification model checks boot configs:
+    1. **ISO-level `/EFI/BOOT/grub.cfg`** -- required, verified pre-patch. Hard-fails if missing (mkksiso `EditGrub2()` always creates this).
+    2. **ISO-level BIOS GRUB2** (`boot/grub2/grub.cfg`) -- best-effort, warn if missing. Surface Go 3 is UEFI-only; Fedora 37+ dropped isolinux/syslinux in favor of GRUB2 for BIOS boot.
+    3. **efiboot.img internal grub.cfg** -- verified post-patch (USB UEFI boot path). When `--skip-mkefiboot` is active, `patch_efiboot` updates volume labels in known patterns (`search --label`/`-l`, `hd:LABEL=`) and injects `inst.ks=` into installer stanzas.
+
+    Generates a SHA-256 checksum file alongside the output ISO.
 
 ### ISO layout
 
@@ -215,20 +220,23 @@ The build script **automatically detects** this using an actual loop device atta
 
 1. Extracts `efiboot.img` from the ISO via `osirrox`
 2. Locates `grub.cfg` inside the FAT image via `mcopy` existence probes
-3. Replaces the original Fedora volume label with the custom label (`SurfaceLinux-43`) using `python3` regex substitution
-4. Re-injects the patched `efiboot.img` via `xorriso`, preserving any appended EFI partition
-5. Re-implants the media checksum via `implantisomd5`
+3. Derives the `inst.ks=` value from the ISO-level `/EFI/BOOT/grub.cfg` (what mkksiso already injected)
+4. Replaces the original Fedora volume label in known patterns (`search --label`/`-l`, `hd:LABEL=`) using targeted `python3` regex substitution
+5. Injects `inst.ks=` into installer stanzas (those containing `inst.stage2=`), handling GRUB `\` line continuations
+6. Re-injects the patched `efiboot.img` via `xorriso`, preserving any appended EFI partition
+7. Spot-checks that ISO-level `/EFI/BOOT/grub.cfg` is still intact after xorriso rewrite
+8. Re-implants the media checksum via `implantisomd5`
 
 You'll see warnings in the output:
 
 ```
 [WARN] Loop device attachment failed — adding --skip-mkefiboot
-[INFO] Patching efiboot.img volume label to 'SurfaceLinux-43'...
+[INFO] Patching efiboot.img: label='SurfaceLinux-43', inst.ks='inst.ks=hd:LABEL=...'
 ```
 
 As a defense-in-depth measure, if the initial mkksiso run (without `--skip-mkefiboot`) fails with a mkefiboot/losetup error, the script automatically retries once with `--skip-mkefiboot` and patching enabled.
 
-UEFI USB boot is preserved because the patched grub.cfg searches for the correct custom volume label. If you need custom EFI partition modifications beyond label patching, use rootful Podman:
+UEFI USB boot is preserved because the patched grub.cfg searches for the correct custom volume label and includes the `inst.ks=` boot argument. If you need custom EFI partition modifications beyond label patching, use rootful Podman:
 
 ```bash
 sudo podman run --privileged --rm -v "$PWD:/build" \

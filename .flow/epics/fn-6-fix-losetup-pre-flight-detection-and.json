@@ -10,9 +10,9 @@
   "id": "fn-6-fix-losetup-pre-flight-detection-and",
   "next_task": 1,
   "plan_review_status": "ship",
-  "plan_reviewed_at": "2026-02-17T19:48:21.064272Z",
+  "plan_reviewed_at": "2026-02-18T08:04:55.461358Z",
   "spec_path": ".flow/specs/fn-6-fix-losetup-pre-flight-detection-and.md",
   "status": "open",
   "title": "Fix losetup pre-flight detection and EFI boot label in ISO builder",
-  "updated_at": "2026-02-17T20:52:08.971199Z"
+  "updated_at": "2026-02-18T08:04:55.461989Z"
 }

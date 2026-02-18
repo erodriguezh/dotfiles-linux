@@ -831,17 +831,105 @@ stage_substitute_credentials() {
 }
 
 # ---------------------------------------------------------------------------
-# Helper: Patch efiboot.img volume label inside an ISO
+# Helper: Extract inst.ks= value from ISO-level EFI grub.cfg
 # ---------------------------------------------------------------------------
-# When --skip-mkefiboot is active and -V changes the ISO volume label,
-# the efiboot.img's internal grub.cfg still references the original Fedora
-# label. On UEFI USB boot, GRUB searches for a volume with the old label,
-# fails to find it, and boot breaks. This function patches the label using
-# mtools (no loop devices needed).
+# Extracts /EFI/BOOT/grub.cfg from the ISO (already modified by mkksiso),
+# scans installer stanzas (those containing inst.stage2=), parses the
+# inst.ks= argument from linux/linuxefi cmdlines (joining \ continuations),
+# and returns exactly one distinct inst.ks= value. Hard-fails if missing
+# or if multiple distinct values found.
 
-patch_efiboot_label() {
+_extract_inst_ks_from_iso() {
+    local iso_path="$1"
+    local work_dir
+    work_dir="$(mktemp -d /tmp/extract-inst-ks.XXXXXX)"
+    trap 'rm -rf "$work_dir"' RETURN
+
+    local grub_file="${work_dir}/grub.cfg"
+    if ! osirrox -indev "$iso_path" -extract "/EFI/BOOT/grub.cfg" "$grub_file" 2>/dev/null; then
+        error "Cannot extract /EFI/BOOT/grub.cfg from ISO — cannot derive inst.ks= value"
+        return 1
+    fi
+
+    # Use python3 to parse GRUB config: join \ continuations, find installer
+    # stanzas (containing inst.stage2=), extract inst.ks= tokens.
+    local result
+    result="$(python3 -c "$(cat << 'PYEOF'
+import re, sys
+
+content = open(sys.argv[1]).read()
+
+# Join backslash-continuation lines into logical lines
+lines = content.splitlines()
+logical_lines = []
+buf = ""
+for line in lines:
+    stripped = line.rstrip()
+    if stripped.endswith("\\"):
+        buf += stripped[:-1] + " "
+    else:
+        buf += stripped
+        logical_lines.append(buf)
+        buf = ""
+if buf:
+    logical_lines.append(buf)
+
+# Find linux/linuxefi cmdlines in installer stanzas (those with inst.stage2=)
+inst_ks_values = set()
+for ll in logical_lines:
+    # Match linux or linuxefi commands
+    if not re.match(r'\s*(linux|linuxefi)\s', ll):
+        continue
+    # Must be an installer stanza (contains inst.stage2=)
+    if 'inst.stage2=' not in ll:
+        continue
+    # Extract inst.ks= token(s)
+    tokens = ll.split()
+    for token in tokens:
+        if token.startswith('inst.ks='):
+            inst_ks_values.add(token)
+
+if not inst_ks_values:
+    print('__NO_INST_KS__', end='')
+    sys.exit(0)
+
+if len(inst_ks_values) > 1:
+    print('__MULTIPLE_INST_KS__:' + '|'.join(sorted(inst_ks_values)), end='')
+    sys.exit(0)
+
+print(inst_ks_values.pop(), end='')
+PYEOF
+    )" "$grub_file")"
+
+    if [[ "$result" == "__NO_INST_KS__" ]]; then
+        error "No inst.ks= found in ISO /EFI/BOOT/grub.cfg installer stanzas"
+        return 1
+    fi
+
+    if [[ "$result" == __MULTIPLE_INST_KS__:* ]]; then
+        local found_values="${result#__MULTIPLE_INST_KS__:}"
+        error "Multiple distinct inst.ks= values in ISO /EFI/BOOT/grub.cfg: $found_values"
+        return 1
+    fi
+
+    # Output the inst.ks= value (e.g., "inst.ks=hd:LABEL=SurfaceLinux-43:/ks.cfg")
+    printf '%s' "$result"
+}
+
+# ---------------------------------------------------------------------------
+# Helper: Patch efiboot.img inside an ISO (label + inst.ks injection)
+# ---------------------------------------------------------------------------
+# When --skip-mkefiboot is active, the efiboot.img's internal grub.cfg
+# still references the original Fedora label and lacks inst.ks= injection.
+# This function:
+#   1. Replaces volume labels in known patterns (search --label/-l, hd:LABEL=)
+#   2. Injects inst.ks= into installer stanzas (those with inst.stage2=)
+# Uses mtools (no loop devices needed).
+
+patch_efiboot() {
     local iso_path="$1"
     local new_label="$2"
+    local inst_ks_value="$3"
     local work_dir
     work_dir="$(mktemp -d /tmp/efi-patch.XXXXXX)"
 
@@ -849,7 +937,7 @@ patch_efiboot_label() {
     # All error paths use `return 1` so the RETURN trap always fires.
     trap 'rm -rf "$work_dir"' RETURN
 
-    info "Patching efiboot.img volume label to '$new_label'..."
+    info "Patching efiboot.img: label='$new_label', inst.ks='$inst_ks_value'..."
 
     # Step A: Extract efiboot.img from the output ISO
     local efi_img="${work_dir}/efiboot.img"
@@ -928,60 +1016,193 @@ PYEOF
     info "  Original label: '$old_label'"
     info "  New label:      '$new_label'"
 
-    if [[ "$old_label" == "$new_label" ]]; then
-        info "  Labels already match — no patching needed"
-        return 0
-    fi
-
-    # Replace label using python3 -c with re.sub + re.escape (preserves quoting style).
+    # Patch grub.cfg: replace labels in known patterns, normalize hd:LABEL=,
+    # and inject inst.ks= into installer stanzas. All done in a single
+    # python3 invocation to handle line continuations correctly.
     python3 -c "$(cat << 'PYEOF'
 import re, sys
 
-old = sys.argv[1]
-new = sys.argv[2]
-content = open(sys.argv[3]).read()
+old_label = sys.argv[1]
+new_label = sys.argv[2]
+inst_ks = sys.argv[3]
+filepath = sys.argv[4]
 
-# Replace the label operand in --label and -l search commands.
-# Preserve the original quoting style by matching the full operand with quotes.
-# For unquoted variants, handle both mid-line and end-of-line cases.
-patterns = [
-    (r"(search.*--label\s+)'" + re.escape(old) + r"'", r"\1'" + new + r"'"),
-    (r'(search.*--label\s+)"' + re.escape(old) + r'"', r'\1"' + new + r'"'),
-    (r"(search.*--label\s+)" + re.escape(old) + r"([\s]|$)", r"\1" + new + r"\2"),
-    (r"(search.*-l\s+)'" + re.escape(old) + r"'", r"\1'" + new + r"'"),
-    (r'(search.*-l\s+)"' + re.escape(old) + r'"', r'\1"' + new + r'"'),
-    (r"(search.*-l\s+)" + re.escape(old) + r"([\s]|$)", r"\1" + new + r"\2"),
-]
+content = open(filepath).read()
 
-for pat, repl in patterns:
-    content = re.sub(pat, repl, content, flags=re.MULTILINE)
+# --- Phase 1: Replace labels in search --label/-l patterns ---
+# Preserve quoting style.
+if old_label != new_label:
+    search_patterns = [
+        (r"(search.*--label\s+)'" + re.escape(old_label) + r"'",
+         r"\1'" + new_label + r"'"),
+        (r'(search.*--label\s+)"' + re.escape(old_label) + r'"',
+         r'\1"' + new_label + r'"'),
+        (r"(search.*--label\s+)" + re.escape(old_label) + r"([\s]|$)",
+         r"\1" + new_label + r"\2"),
+        (r"(search.*-l\s+)'" + re.escape(old_label) + r"'",
+         r"\1'" + new_label + r"'"),
+        (r'(search.*-l\s+)"' + re.escape(old_label) + r'"',
+         r'\1"' + new_label + r'"'),
+        (r"(search.*-l\s+)" + re.escape(old_label) + r"([\s]|$)",
+         r"\1" + new_label + r"\2"),
+    ]
+    for pat, repl in search_patterns:
+        content = re.sub(pat, repl, content, flags=re.MULTILINE)
 
-open(sys.argv[3], 'w').write(content)
+# --- Phase 2: Replace labels in hd:LABEL= patterns ---
+# Scoped to inst.stage2= and inst.ks= arguments only.
+if old_label != new_label:
+    content = re.sub(
+        r"(inst\.(?:stage2|ks)=hd:LABEL=)" + re.escape(old_label),
+        r"\1" + new_label,
+        content
+    )
+
+# --- Phase 3: Inject inst.ks= into installer stanzas ---
+# Process line-by-line, joining \ continuations into logical lines,
+# then inject inst.ks= only into stanzas with inst.stage2=.
+lines = content.splitlines(True)  # keep line endings
+output_lines = []
+i = 0
+while i < len(lines):
+    line = lines[i]
+    stripped = line.rstrip('\n').rstrip('\r')
+
+    # Check if this is a linux/linuxefi command line
+    if re.match(r'\s*(linux|linuxefi)\s', stripped):
+        # Collect the full logical cmdline (join \ continuations)
+        physical_lines = [lines[i]]
+        while stripped.endswith('\\') and i + 1 < len(lines):
+            i += 1
+            physical_lines.append(lines[i])
+            stripped = lines[i].rstrip('\n').rstrip('\r')
+
+        # Join into a single logical line for analysis
+        logical = ""
+        for pl in physical_lines:
+            s = pl.rstrip('\n').rstrip('\r')
+            if s.endswith('\\'):
+                logical += s[:-1] + " "
+            else:
+                logical += s
+
+        # Only modify installer stanzas (those with inst.stage2=)
+        if 'inst.stage2=' in logical:
+            # Check if inst.ks= already present
+            if 'inst.ks=' not in logical:
+                # Inject inst.ks= at end of logical cmdline.
+                # Reconstruct physical lines with injection.
+                last_pl = physical_lines[-1].rstrip('\n').rstrip('\r')
+                if last_pl.endswith('\\'):
+                    # Continuation: add inst.ks before the backslash
+                    physical_lines[-1] = last_pl[:-1].rstrip() + \
+                        ' ' + inst_ks + ' \\\n'
+                else:
+                    # Last line: append inst.ks at end
+                    physical_lines[-1] = last_pl + ' ' + inst_ks + '\n'
+            # If inst.ks= is already present, leave as-is
+        output_lines.extend(physical_lines)
+    else:
+        output_lines.append(line)
+    i += 1
+
+content = ''.join(output_lines)
+open(filepath, 'w').write(content)
 PYEOF
-    )" "$old_label" "$new_label" "$grub_file"
+    )" "$old_label" "$new_label" "$inst_ks_value" "$grub_file"
 
     # Write back
     mcopy -o -i "$efi_img" "$grub_file" "$grub_path"
 
-    # Verify: re-extract and check
+    # Step D: Post-patch verification
     local verify_file="${work_dir}/grub-verify.cfg"
     mcopy -i "$efi_img" "$grub_path" "$verify_file"
 
-    local old_count new_count
-    old_count="$(grep -F -c -- "$old_label" "$verify_file" 2>/dev/null || true)"
-    new_count="$(grep -F -c -- "$new_label" "$verify_file" 2>/dev/null || true)"
+    # Verify using python3 for accurate continuation-aware checking.
+    local verify_result
+    verify_result="$(python3 -c "$(cat << 'PYEOF'
+import re, sys
 
-    if [[ "$old_count" -ne 0 ]]; then
-        error "Verification failed: old label '$old_label' still present ($old_count occurrences)"
+old_label = sys.argv[1]
+new_label = sys.argv[2]
+inst_ks = sys.argv[3]
+filepath = sys.argv[4]
+
+content = open(filepath).read()
+errors = []
+
+# Check 1: Old label should not appear in known patterns
+old_in_search = len(re.findall(
+    r'search.*(?:--label|-l)\s+["\']?' + re.escape(old_label), content))
+old_in_hd = len(re.findall(r'hd:LABEL=' + re.escape(old_label), content))
+if old_label != new_label and (old_in_search + old_in_hd) > 0:
+    errors.append(f"Old label '{old_label}' still present: "
+                  f"{old_in_search} in search, {old_in_hd} in hd:LABEL=")
+
+# Check 2: New label must appear at least once
+new_in_search = len(re.findall(
+    r'search.*(?:--label|-l)\s+["\']?' + re.escape(new_label), content))
+new_in_hd = len(re.findall(r'hd:LABEL=' + re.escape(new_label), content))
+if (new_in_search + new_in_hd) < 1:
+    errors.append(f"New label '{new_label}' not found in any known pattern")
+
+# Check 3: Every installer stanza must have exactly one inst.ks=
+# Join continuation lines, find installer linux/linuxefi stanzas
+lines = content.splitlines()
+logical_lines = []
+buf = ""
+for line in lines:
+    stripped = line.rstrip()
+    if stripped.endswith('\\'):
+        buf += stripped[:-1] + " "
+    else:
+        buf += stripped
+        logical_lines.append(buf)
+        buf = ""
+if buf:
+    logical_lines.append(buf)
+
+installer_count = 0
+missing_ks = 0
+dup_ks = 0
+for ll in logical_lines:
+    if not re.match(r'\s*(linux|linuxefi)\s', ll):
+        continue
+    if 'inst.stage2=' not in ll:
+        continue
+    installer_count += 1
+    ks_count = ll.count('inst.ks=')
+    if ks_count == 0:
+        missing_ks += 1
+    elif ks_count > 1:
+        dup_ks += 1
+
+if installer_count == 0:
+    errors.append("No installer stanzas found (linux/linuxefi with inst.stage2=)")
+if missing_ks > 0:
+    errors.append(f"{missing_ks} installer stanza(s) missing inst.ks=")
+if dup_ks > 0:
+    errors.append(f"{dup_ks} installer stanza(s) have duplicate inst.ks=")
+
+if errors:
+    print('FAIL:' + '|'.join(errors), end='')
+else:
+    print(f'OK:search={new_in_search},hd={new_in_hd},stanzas={installer_count}', end='')
+PYEOF
+    )" "$old_label" "$new_label" "$inst_ks_value" "$verify_file")"
+
+    if [[ "$verify_result" == FAIL:* ]]; then
+        local fail_detail="${verify_result#FAIL:}"
+        error "Post-patch verification failed:"
+        # Split on pipe and report each error
+        while IFS='|' read -r -d '|' err_msg || [[ -n "$err_msg" ]]; do
+            error "  - $err_msg"
+        done <<< "$fail_detail"
         return 1
     fi
-    if [[ "$new_count" -lt 1 ]]; then
-        error "Verification failed: new label '$new_label' not found in patched grub.cfg"
-        return 1
-    fi
-    success "  Label patched and verified ($new_count occurrences of '$new_label')"
+    success "  efiboot.img grub.cfg patched and verified ($verify_result)"
 
-    # Step D: Detect appended EFI partition and re-inject
+    # Step E: Detect appended EFI partition and re-inject via xorriso
     local xorriso_output
     local xorriso_rc=0
     xorriso_output="$(xorriso -indev "$iso_path" -report_system_area plain 2>&1)" || xorriso_rc=$?
@@ -1038,7 +1259,19 @@ PYEOF
     # Replace original ISO with patched version
     mv -f "$fixed_iso" "$iso_path"
 
-    # Step E: Re-implant media checksum
+    # Step F: Post-rewrite spot-check — verify ISO-level EFI grub.cfg survived xorriso
+    local spot_check="${work_dir}/spot-check-grub.cfg"
+    if ! osirrox -indev "$iso_path" -extract "/EFI/BOOT/grub.cfg" "$spot_check" 2>/dev/null; then
+        error "Post-rewrite spot-check failed: /EFI/BOOT/grub.cfg missing from ISO after xorriso"
+        return 1
+    fi
+    if ! grep -q 'inst\.ks=' "$spot_check" 2>/dev/null; then
+        error "Post-rewrite spot-check failed: inst.ks= missing from ISO /EFI/BOOT/grub.cfg after xorriso"
+        return 1
+    fi
+    success "  Post-rewrite spot-check passed: ISO /EFI/BOOT/grub.cfg intact"
+
+    # Step G: Re-implant media checksum
     info "  Re-implanting media checksum (implantisomd5)..."
     implantisomd5 "$iso_path"
 
@@ -1225,42 +1458,86 @@ stage_assemble_iso() {
         return 0
     }
 
-    _verify_no_duplicate_inst_ks() {
+    # -------------------------------------------------------------------
+    # _verify_inst_ks_iso_configs — Check ISO-level boot configs
+    # -------------------------------------------------------------------
+    # Checks BIOS GRUB2 configs (warn-only) and ISO-level /EFI/BOOT/grub.cfg
+    # (required, hard-fail). Run BEFORE optional efiboot.img patching.
+    _verify_inst_ks_iso_configs() {
         local iso_path="$1"
         local tmp_mount
-        tmp_mount="$(mktemp -d /tmp/iso-verify.XXXXXX)"
+        tmp_mount="$(mktemp -d /tmp/iso-verify-iso.XXXXXX)"
+        trap 'rm -rf "$tmp_mount"' RETURN
 
-        # BIOS: check isolinux/syslinux config from ISO filesystem
+        # BIOS: check GRUB2 configs from ISO filesystem (Fedora 37+ uses GRUB2,
+        # not isolinux/syslinux). Keep legacy candidates as trailing fallbacks.
         local bios_cfg=""
         local bios_candidate
-        for bios_candidate in "/isolinux/isolinux.cfg" "/syslinux/syslinux.cfg"; do
+        for bios_candidate in \
+            "/boot/grub2/grub.cfg" \
+            "/boot/grub/grub.cfg" \
+            "/isolinux/isolinux.cfg" \
+            "/syslinux/syslinux.cfg"; do
             if osirrox -indev "$iso_path" -extract "$bios_candidate" "${tmp_mount}/bios.cfg" 2>/dev/null; then
                 bios_cfg="${tmp_mount}/bios.cfg"
                 break
             fi
         done
 
-        # BIOS: must locate a config; hard-fail if neither found
+        # BIOS: warn if absent — Surface Go 3 is UEFI-only, BIOS boot is optional
         if [[ -z "$bios_cfg" ]]; then
-            error "No BIOS boot config found (isolinux.cfg / syslinux.cfg) — cannot verify inst.ks="
-            rm -rf "$tmp_mount"
-            exit 1
+            warn "No BIOS boot config found (grub2/grub.cfg, isolinux.cfg, syslinux.cfg) — skipping BIOS inst.ks= check"
+        else
+            if ! _assert_no_dup_inst_ks_in_file "$bios_cfg" "BIOS config ($bios_candidate)"; then
+                return 1
+            fi
+            info "BIOS config ($bios_candidate): no duplicate inst.ks= on any cmdline"
         fi
 
-        if ! _assert_no_dup_inst_ks_in_file "$bios_cfg" "BIOS config ($bios_candidate)"; then
-            rm -rf "$tmp_mount"
-            exit 1
+        # ISO-level EFI: /EFI/BOOT/grub.cfg — required (mkksiso EditGrub2 always modifies this)
+        local iso_efi_grub="${tmp_mount}/efi-boot-grub.cfg"
+        if ! osirrox -indev "$iso_path" -extract "/EFI/BOOT/grub.cfg" "$iso_efi_grub" 2>/dev/null; then
+            error "ISO-level /EFI/BOOT/grub.cfg not found — mkksiso may have failed"
+            return 1
         fi
-        info "BIOS config ($bios_candidate): no duplicate inst.ks= on any cmdline"
 
-        # EFI: extract efiboot.img, then grub.cfg from inside it via mtools
+        if ! _assert_no_dup_inst_ks_in_file "$iso_efi_grub" "ISO /EFI/BOOT/grub.cfg"; then
+            return 1
+        fi
+        info "ISO /EFI/BOOT/grub.cfg: no duplicate inst.ks= on any cmdline"
+
+        # /EFI/BOOT/BOOT.conf (Apple EFI) — warn-only diagnostic
+        local apple_conf="${tmp_mount}/boot.conf"
+        if osirrox -indev "$iso_path" -extract "/EFI/BOOT/BOOT.conf" "$apple_conf" 2>/dev/null; then
+            if ! _assert_no_dup_inst_ks_in_file "$apple_conf" "ISO /EFI/BOOT/BOOT.conf"; then
+                warn "/EFI/BOOT/BOOT.conf has duplicate inst.ks= — non-fatal (Apple EFI path)"
+            else
+                info "ISO /EFI/BOOT/BOOT.conf: no duplicate inst.ks= on any cmdline"
+            fi
+        fi
+
+        success "ISO-level boot config verification passed"
+    }
+
+    # -------------------------------------------------------------------
+    # _verify_inst_ks_efiboot — Check efiboot.img internal grub.cfg
+    # -------------------------------------------------------------------
+    # Checks the grub.cfg INSIDE efiboot.img (USB UEFI boot path).
+    # Run AFTER optional efiboot.img patching.
+    _verify_inst_ks_efiboot() {
+        local iso_path="$1"
+        local tmp_mount
+        tmp_mount="$(mktemp -d /tmp/iso-verify-efi.XXXXXX)"
+        trap 'rm -rf "$tmp_mount"' RETURN
+
+        # Extract efiboot.img from ISO
         local efi_img="${tmp_mount}/efiboot.img"
         if ! osirrox -indev "$iso_path" -extract "/images/efiboot.img" "$efi_img" 2>/dev/null; then
-            error "Cannot extract efiboot.img from ISO — cannot verify EFI boot config"
-            rm -rf "$tmp_mount"
-            exit 1
+            error "Cannot extract efiboot.img from ISO — cannot verify EFI internal boot config"
+            return 1
         fi
 
+        # Locate grub.cfg inside the FAT image
         local efi_grub=""
         local efi_candidate
         for efi_candidate in "::/EFI/BOOT/grub.cfg" "::/EFI/fedora/grub.cfg"; do
@@ -1271,37 +1548,55 @@ stage_assemble_iso() {
         done
 
         if [[ -z "$efi_grub" ]]; then
-            error "Cannot locate grub.cfg inside efiboot.img — cannot verify EFI boot config"
-            rm -rf "$tmp_mount"
-            exit 1
+            error "Cannot locate grub.cfg inside efiboot.img — cannot verify EFI internal boot config"
+            return 1
         fi
 
-        if ! _assert_no_dup_inst_ks_in_file "$efi_grub" "EFI grub.cfg ($efi_candidate)"; then
-            rm -rf "$tmp_mount"
-            exit 1
+        if ! _assert_no_dup_inst_ks_in_file "$efi_grub" "efiboot.img grub.cfg ($efi_candidate)"; then
+            return 1
         fi
-        info "EFI grub.cfg ($efi_candidate): no duplicate inst.ks= on any cmdline"
+        info "efiboot.img grub.cfg ($efi_candidate): no duplicate inst.ks= on any cmdline"
 
-        rm -rf "$tmp_mount"
-        success "No duplicate inst.ks= entries in boot configs"
+        success "efiboot.img internal boot config verification passed"
     }
 
-    _verify_no_duplicate_inst_ks "$output_iso"
+    # -----------------------------------------------------------------------
+    # Pre-patch: verify ISO-level boot configs
+    # -----------------------------------------------------------------------
+    if ! _verify_inst_ks_iso_configs "$output_iso"; then
+        error "ISO-level boot config verification failed — aborting"
+        exit 1
+    fi
 
     # -----------------------------------------------------------------------
     # Patch efiboot.img when --skip-mkefiboot was used and -V changed the label
     # -----------------------------------------------------------------------
     if [[ "$needs_efi_patch" == true ]]; then
-        if ! patch_efiboot_label "$output_iso" "SurfaceLinux-43"; then
+        local inst_ks_value
+        if ! inst_ks_value="$(_extract_inst_ks_from_iso "$output_iso")"; then
+            error "Cannot derive inst.ks= value from ISO — aborting"
+            exit 1
+        fi
+        info "Derived inst.ks= value from ISO: $inst_ks_value"
+
+        if ! patch_efiboot "$output_iso" "SurfaceLinux-43" "$inst_ks_value"; then
             error "efiboot.img patching failed — aborting"
             exit 1
         fi
     fi
 
+    # -----------------------------------------------------------------------
+    # Post-patch: verify efiboot.img internal grub.cfg
+    # -----------------------------------------------------------------------
+    if ! _verify_inst_ks_efiboot "$output_iso"; then
+        error "efiboot.img boot config verification failed — aborting"
+        exit 1
+    fi
+
     # Clean up staging
     rm -rf "$staging"
 
-    # Generate checksum
+    # Generate checksum (after all patching is complete)
     local sha256
     sha256="$(sha256sum "$output_iso" | awk '{print $1}')"
     echo "$sha256  $(basename "$output_iso")" > "${output_iso}.sha256"
