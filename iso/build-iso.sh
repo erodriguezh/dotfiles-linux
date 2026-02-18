@@ -1019,9 +1019,14 @@ patch_efiboot() {
                         error "El Torito extraction produced no EFI boot image (no files contain grub.cfg)"
                         error "  Extracted files:"
                         local ef
+                        local has_files=false
                         for ef in "$eltorito_dir"/*; do
-                            [[ -e "$ef" ]] && error "    $(basename "$ef") ($(stat -c '%s' "$ef" 2>/dev/null || stat -f '%z' "$ef") bytes)"
+                            if [[ -e "$ef" ]]; then
+                                has_files=true
+                                error "    $(basename "$ef") ($(stat -c '%s' "$ef" 2>/dev/null || stat -f '%z' "$ef") bytes)"
+                            fi
                         done
+                        [[ "$has_files" == false ]] && error "    (none — extraction directory is empty)"
                         return 1
                     fi
 
