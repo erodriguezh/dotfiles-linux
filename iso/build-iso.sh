@@ -843,7 +843,7 @@ _extract_inst_ks_from_iso() {
     local iso_path="$1"
     local work_dir
     work_dir="$(mktemp -d /tmp/extract-inst-ks.XXXXXX)"
-    trap 'rm -rf "$work_dir"' RETURN
+    trap 'rm -rf "$work_dir"; trap - RETURN' RETURN
 
     local grub_file="${work_dir}/grub.cfg"
     if ! osirrox -indev "$iso_path" -extract "/EFI/BOOT/grub.cfg" "$grub_file" 2>/dev/null; then
@@ -951,8 +951,8 @@ patch_efiboot() {
     work_dir="$(mktemp -d /tmp/efi-patch.XXXXXX)"
 
     # Clean up work_dir on any function return (normal or error).
-    # All error paths use `return 1` so the RETURN trap always fires.
-    trap 'rm -rf "$work_dir"' RETURN
+    # Self-disarms after firing to avoid leaking into the caller's scope.
+    trap 'rm -rf "$work_dir"; trap - RETURN' RETURN
 
     info "Patching efiboot.img: label='$new_label', inst.ks='$inst_ks_value'..."
 
@@ -1472,7 +1472,7 @@ stage_assemble_iso() {
         local label="$2"
         local result
         result="$(python3 -c "$(cat << 'PYEOF'
-import sys
+import re, sys
 
 filepath = sys.argv[1]
 content = open(filepath).read()
@@ -1492,8 +1492,12 @@ for line in lines:
 if buf:
     logical_lines.append(buf)
 
+# Only check linux/linuxefi cmdlines (kernel boot commands).
+# This avoids false positives from comments or non-kernel GRUB directives.
 any_found = False
 for ll in logical_lines:
+    if not re.match(r'\s*(linux|linuxefi)\s', ll):
+        continue
     c = ll.count("inst.ks=")
     if c > 0:
         any_found = True
@@ -1530,7 +1534,7 @@ PYEOF
         local iso_path="$1"
         local tmp_mount
         tmp_mount="$(mktemp -d /tmp/iso-verify-iso.XXXXXX)"
-        trap 'rm -rf "$tmp_mount"' RETURN
+        trap 'rm -rf "$tmp_mount"; trap - RETURN' RETURN
 
         # BIOS: check GRUB2 configs from ISO filesystem (Fedora 37+ uses GRUB2,
         # not isolinux/syslinux). Keep legacy candidates as trailing fallbacks.
@@ -1573,9 +1577,9 @@ PYEOF
         local apple_conf="${tmp_mount}/boot.conf"
         if osirrox -indev "$iso_path" -extract "/EFI/BOOT/BOOT.conf" "$apple_conf" 2>/dev/null; then
             if ! _assert_no_dup_inst_ks_in_file "$apple_conf" "ISO /EFI/BOOT/BOOT.conf"; then
-                warn "/EFI/BOOT/BOOT.conf has duplicate inst.ks= — non-fatal (Apple EFI path)"
+                warn "/EFI/BOOT/BOOT.conf has inst.ks= issue — non-fatal (Apple EFI path)"
             else
-                info "ISO /EFI/BOOT/BOOT.conf: no duplicate inst.ks= on any cmdline"
+                info "ISO /EFI/BOOT/BOOT.conf: inst.ks= verified"
             fi
         fi
 
@@ -1591,7 +1595,7 @@ PYEOF
         local iso_path="$1"
         local tmp_mount
         tmp_mount="$(mktemp -d /tmp/iso-verify-efi.XXXXXX)"
-        trap 'rm -rf "$tmp_mount"' RETURN
+        trap 'rm -rf "$tmp_mount"; trap - RETURN' RETURN
 
         # Extract efiboot.img from ISO
         local efi_img="${tmp_mount}/efiboot.img"
