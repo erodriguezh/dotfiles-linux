@@ -123,3 +123,5 @@ _verify_inst_ks_efiboot "$output_iso"
 - [ ] Diffs kept surgical — no unrelated refactors in Stage 11
 
 ## Done summary
+
+## Evidence
