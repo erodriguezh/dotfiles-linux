@@ -1,0 +1,14 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-02-18T13:59:07.535740Z",
+  "depends_on": [],
+  "epic": "fn-9-extract-efibootimg-via-el-torito-when",
+  "id": "fn-9-extract-efibootimg-via-el-torito-when.1",
+  "priority": null,
+  "spec_path": ".flow/tasks/fn-9-extract-efibootimg-via-el-torito-when.1.md",
+  "status": "todo",
+  "title": "Add El Torito extraction fallback to patch_efiboot Step A",
+  "updated_at": "2026-02-18T13:59:30.965867Z"
+}

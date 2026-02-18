@@ -959,19 +959,92 @@ patch_efiboot() {
 
     info "Patching efiboot.img: label='$new_label', inst.ks='$inst_ks_value'..."
 
-    # Step A: Extract efiboot.img from the output ISO (fall back to boot ISO)
-    # When --skip-mkefiboot is active, efiboot.img may not be a visible ISO 9660
-    # entry in the output ISO (mkksiso stores it only as an El Torito partition).
-    # The original boot ISO always has it as a standard filesystem entry.
+    # Step A: Extract efiboot.img from the output ISO
+    # Three-tier fallback chain:
+    #   1. Filesystem extraction from output ISO (works when mkksiso preserves entry)
+    #   2. Filesystem extraction from original boot ISO (works if boot ISO has entry)
+    #   3. El Torito extraction from boot ISO via osirrox -extract_boot_images
+    #      (handles Fedora 43 where efiboot.img is only in El Torito boot catalog)
     local efi_img="${work_dir}/efiboot.img"
     local extract_err=""
     if ! extract_err="$(osirrox -indev "$iso_path" -extract /images/efiboot.img "$efi_img" 2>&1)"; then
         if [[ -n "$boot_iso" && -f "$boot_iso" ]]; then
             info "  /images/efiboot.img not in output ISO — extracting from original boot ISO"
             if ! extract_err="$(osirrox -indev "$boot_iso" -extract /images/efiboot.img "$efi_img" 2>&1)"; then
-                error "Failed to extract efiboot.img from both output and boot ISO"
-                [[ -n "$extract_err" ]] && error "  osirrox: $extract_err"
-                return 1
+                # Tier 3: El Torito extraction — boot ISO has no filesystem entry either.
+                # Fedora 43 stores efiboot.img only in the El Torito boot catalog /
+                # GPT appended partition, not as a visible ISO 9660 directory entry.
+                info "  /images/efiboot.img not in boot ISO filesystem — trying El Torito extraction"
+
+                local eltorito_dir="${work_dir}/eltorito"
+                mkdir -p "$eltorito_dir"
+
+                local eltorito_err=""
+                local eltorito_ok=false
+                # Try osirrox first, fall back to xorriso if osirrox lacks the option
+                if eltorito_err="$(osirrox -indev "$boot_iso" \
+                        -extract_boot_images "$eltorito_dir/" 2>&1)"; then
+                    eltorito_ok=true
+                    info "  El Torito images extracted via osirrox"
+                else
+                    local osirrox_err="$eltorito_err"
+                    if eltorito_err="$(xorriso -indev "$boot_iso" -osirrox on \
+                            -extract_boot_images "$eltorito_dir/" 2>&1)"; then
+                        eltorito_ok=true
+                        info "  El Torito images extracted via xorriso"
+                    else
+                        error "Failed to extract efiboot.img from both ISOs and El Torito extraction failed"
+                        [[ -n "$osirrox_err" ]] && error "  osirrox: $osirrox_err"
+                        [[ -n "$eltorito_err" ]] && error "  xorriso: $eltorito_err"
+                        return 1
+                    fi
+                fi
+
+                if [[ "$eltorito_ok" == true ]]; then
+                    # Identify the EFI image: probe ALL regular files for grub.cfg
+                    local -a efi_candidates=()
+                    local -a candidate_grub_paths=()
+                    local probe_file grub_candidate
+                    while IFS= read -r -d '' probe_file; do
+                        for grub_candidate in "::/EFI/BOOT/grub.cfg" "::/EFI/fedora/grub.cfg"; do
+                            if mcopy -o -i "$probe_file" "$grub_candidate" /dev/null 2>/dev/null; then
+                                efi_candidates+=("$probe_file")
+                                candidate_grub_paths+=("$grub_candidate")
+                                break  # one match per file is enough
+                            fi
+                        done
+                    done < <(find "$eltorito_dir" -type f -print0)
+
+                    if [[ ${#efi_candidates[@]} -eq 0 ]]; then
+                        error "El Torito extraction produced no EFI boot image (no files contain grub.cfg)"
+                        error "  Extracted files:"
+                        local ef
+                        local has_files=false
+                        for ef in "$eltorito_dir"/*; do
+                            if [[ -e "$ef" ]]; then
+                                has_files=true
+                                error "    $(basename "$ef") ($(stat -c '%s' "$ef" 2>/dev/null || stat -f '%z' "$ef") bytes)"
+                            fi
+                        done
+                        [[ "$has_files" == false ]] && error "    (none — extraction directory is empty)"
+                        return 1
+                    fi
+
+                    if [[ ${#efi_candidates[@]} -gt 1 ]]; then
+                        error "Multiple El Torito images contain grub.cfg — ambiguous, cannot pick:"
+                        local ci
+                        for ci in "${!efi_candidates[@]}"; do
+                            error "  ${efi_candidates[$ci]} (grub.cfg at ${candidate_grub_paths[$ci]})"
+                        done
+                        return 1
+                    fi
+
+                    # Exactly one candidate — copy to efi_img
+                    cp "${efi_candidates[0]}" "$efi_img"
+                    info "  EFI image identified: $(basename "${efi_candidates[0]}") (grub.cfg at ${candidate_grub_paths[0]})"
+                fi
+            else
+                info "  Extracted efiboot.img from boot ISO filesystem"
             fi
         else
             error "Failed to extract efiboot.img from ISO"

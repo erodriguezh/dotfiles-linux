@@ -1,0 +1,70 @@
+{
+  "created_at": "2026-02-18T14:00:37.377533Z",
+  "epic": {
+    "data": {
+      "branch_name": "fn-9-extract-efibootimg-via-el-torito-when",
+      "completion_review_status": "unknown",
+      "completion_reviewed_at": null,
+      "created_at": "2026-02-18T13:58:03.881365Z",
+      "default_impl": null,
+      "default_review": null,
+      "default_sync": null,
+      "depends_on_epics": [
+        "fn-8-fix-efiboot-extraction-failure-in-skip"
+      ],
+      "id": "fn-9-extract-efibootimg-via-el-torito-when",
+      "next_task": 1,
+      "plan_review_status": "unknown",
+      "plan_reviewed_at": null,
+      "spec_path": ".flow/specs/fn-9-extract-efibootimg-via-el-torito-when.md",
+      "status": "open",
+      "title": "Extract efiboot.img via El Torito when ISO 9660 entry missing",
+      "updated_at": "2026-02-18T13:59:01.714892Z"
+    },
+    "spec": "# Extract efiboot.img via El Torito when ISO 9660 entry missing\n\n## Problem\n\nThe fn-8 fix added a boot ISO fallback to `patch_efiboot()`, assuming the original Fedora 43 boot.iso has `/images/efiboot.img` as an extractable ISO 9660 filesystem entry. **It does not.** Both the output ISO and the boot ISO store efiboot.img only as a hidden El Torito EFI boot partition + GPT appended partition, not as a Rock Ridge directory entry.\n\nBuild log evidence:\n```\nxorriso : FAILURE : Cannot determine attributes of (ISO) source file '/images/efiboot.img' : No such file or directory\n```\nThis fails on **both** output and boot ISOs \u2014 the fn-8 two-level fallback exhausts without success.\n\n## Root Cause\n\nFedora 43 Everything/netinstall boot.iso stores the EFI boot image exclusively in the El Torito boot catalog (platform ID 0xEF) and as a GPT appended partition (type `C12A7328-F81F-11D2-BA4B-00A0C93EC93B`). It is NOT a visible ISO 9660 / Rock Ridge directory entry at `/images/efiboot.img`. The `osirrox -extract` command can only extract filesystem-level entries, not raw El Torito partitions.\n\nxorriso confirms the image exists as El Torito only:\n```\nlibisofs: NOTE : Found hidden El-Torito image for EFI.\nlibisofs: NOTE : EFI image start and size: 565743 * 2048 , 25832 * 512\n```\n\n## Solution\n\nAdd El Torito extraction as a third fallback tier in `patch_efiboot()` Step A, using `osirrox -extract_boot_images`. This command extracts boot images that are not visible in the filesystem tree, including El Torito catalog entries.\n\n**Extraction fallback chain:**\n1. Filesystem extraction from output ISO (existing \u2014 works when mkksiso preserves entry)\n2. Filesystem extraction from boot ISO (fn-8 \u2014 works if boot ISO has entry)\n3. **NEW**: El Torito extraction from boot ISO via `osirrox -extract_boot_images`\n\nThe third tier handles the Fedora 43 case where neither ISO has a filesystem entry.\n\n## Scope\n\nNarrow \u2014 Step A extraction logic in `patch_efiboot()` + README update:\n\n### Task 1: Add El Torito extraction fallback to patch_efiboot\n\n**File:** `iso/build-iso.sh` \u2014 `patch_efiboot()` Step A (~lines 957-983)\n\nAfter both filesystem-level extractions fail, add:\n1. Call `osirrox -extract_boot_images` on `$boot_iso` into a temp subdirectory of `$work_dir`\n2. Identify the EFI boot image among extracted files \u2014 probe each `eltorito_img*.img` with `mcopy -i <img> ::/EFI/BOOT/grub.cfg /dev/null` to confirm it's a FAT image containing grub.cfg (most robust identification, not filename-dependent)\n3. Copy the identified image to `$efi_img`\n4. Log which extraction method succeeded\n5. Capture and display osirrox stderr on failure (follow fn-8 pattern)\n\n**Key decisions:**\n- Use `mcopy` probing (not filename matching) to identify the correct image \u2014 xorriso naming is not guaranteed stable across versions\n- Extract from `$boot_iso` (not output ISO) because the output ISO's El Torito entry may reference modified/partial data from mkksiso\n- Place extracted files in `$work_dir/eltorito/` subdirectory \u2014 cleaned up by existing RETURN trap\n\n**Pre-implementation verification needed:** Run `osirrox -extract_boot_images` on the Fedora 43 boot.iso inside the Podman container to confirm:\n- Exact files produced and their names\n- That the EFI image contains a FAT filesystem with `/EFI/BOOT/grub.cfg`\n- That `mcopy` can read it\n- That the extracted image works when re-injected via xorriso `-append_partition`\n\n### Task 2: Update iso/README.md for El Torito extraction\n\n**File:** `iso/README.md` \u2014 \"mkksiso fails with losetup / mkefiboot error\" section (~lines 215-244)\n\nUpdate step 1 description to explain the three-tier extraction fallback and why El Torito extraction is needed for Fedora 43 ISOs.\n\n## Out of scope\n\n- Changing the Containerfile or adding loop device support\n- Investigating why Fedora 43 boot.iso lacks the Rock Ridge entry (lorax design choice)\n- Rewriting the entire efiboot patching approach (Steps B-G work fine)\n- `dd` + sector offset extraction (over-engineering; `osirrox -extract_boot_images` is cleaner)\n\n## Quick commands\n\n```bash\n# Build ISO in container \u2014 should complete Stage 11 including efiboot.img patching\npodman run --privileged --rm -v \"$PWD:/build\" \\\n  surface-iso-builder /build/iso/build-iso.sh --username=edu --password-hash-file=/tmp/hash.txt\n\n# Verify El Torito extraction works on boot ISO (run inside container)\nmkdir -p /tmp/eltorito-test\nosirrox -indev /build/.cache/isos/fedora-boot-43.iso -extract_boot_images /tmp/eltorito-test/\nls -la /tmp/eltorito-test/\n# Check which file is the EFI FAT image\nfor f in /tmp/eltorito-test/eltorito_img*.img; do\n  mcopy -i \"$f\" ::/EFI/BOOT/grub.cfg /dev/null 2>/dev/null && echo \"EFI: $f\"\ndone\n```\n\n## Key context\n\n- `osirrox -extract_boot_images DIR/` extracts El Torito boot images to `DIR/` \u2014 produces files named `eltorito_img1_*.img`, `eltorito_img2_*.img`, etc. (xorriso 1.5.x+, Fedora 43 ships 1.5.6)\n- Fedora ISOs typically have BIOS as El Torito entry 1 and EFI as entry 2, but this is NOT guaranteed\n- The EFI image is a FAT filesystem containing `/EFI/BOOT/grub.cfg` \u2014 probing with `mcopy` is the most robust identification method\n- After xorriso re-injection (Step E), `/images/efiboot.img` WILL be a visible filesystem entry \u2014 so `_verify_inst_ks_efiboot()` works unchanged\n- The existing `$work_dir` with RETURN trap handles cleanup of temp files\n\n## Acceptance\n\n- [ ] `patch_efiboot` tries El Torito extraction when both filesystem-level extractions fail\n- [ ] El Torito image identification uses `mcopy` probe (not filename matching)\n- [ ] Info log indicates extraction method used (filesystem vs El Torito)\n- [ ] osirrox errors captured and displayed on failure\n- [ ] Full ISO build succeeds in Podman with loop device probe failure\n- [ ] `iso/README.md` updated to describe three-tier extraction fallback\n\n## References\n\n- `iso/build-iso.sh:957-983` \u2014 Step A extraction (current two-tier fallback)\n- `iso/build-iso.sh:948-1342` \u2014 Full `patch_efiboot()` function\n- `iso/build-iso.sh:1691` \u2014 Call site in `stage_assemble_iso()`\n- `iso/README.md:215-244` \u2014 \"mkksiso fails with losetup / mkefiboot error\" section\n- [Arch Forums xorriso -extract_boot_images example](https://bbs.archlinux.org/viewtopic.php?id=298981)\n- [Debian RepackBootableISO wiki](https://wiki.debian.org/RepackBootableISO)\n- [xorriso man page](https://www.gnu.org/software/xorriso/man_1_xorriso.html)\n"
+  },
+  "epic_id": "fn-9-extract-efibootimg-via-el-torito-when",
+  "schema_version": 2,
+  "tasks": [
+    {
+      "data": {
+        "assignee": null,
+        "claim_note": "",
+        "claimed_at": null,
+        "created_at": "2026-02-18T13:59:07.535740Z",
+        "depends_on": [],
+        "epic": "fn-9-extract-efibootimg-via-el-torito-when",
+        "id": "fn-9-extract-efibootimg-via-el-torito-when.1",
+        "priority": null,
+        "spec_path": ".flow/tasks/fn-9-extract-efibootimg-via-el-torito-when.1.md",
+        "status": "todo",
+        "title": "Add El Torito extraction fallback to patch_efiboot Step A",
+        "updated_at": "2026-02-18T13:59:30.965867Z"
+      },
+      "id": "fn-9-extract-efibootimg-via-el-torito-when.1",
+      "runtime": null,
+      "spec": "# fn-9-extract-efibootimg-via-el-torito-when.1 Add El Torito extraction fallback to patch_efiboot Step A\n\n## Description\n\nAdd a third-tier El Torito extraction fallback to `patch_efiboot()` Step A when both filesystem-level osirrox extractions fail (output ISO and boot ISO).\n\n**Size:** M\n**Files:** `iso/build-iso.sh`\n\n### Approach\n\nAfter the existing two-tier fallback (output ISO filesystem \u2192 boot ISO filesystem), add:\n\n1. Create temp subdirectory `${work_dir}/eltorito/` for extracted boot images\n2. Run `osirrox -indev \"$boot_iso\" -extract_boot_images \"${work_dir}/eltorito/\"` \u2014 capture stderr per fn-8 pattern\n3. Identify the EFI image by probing each `eltorito_img*.img` file with `mcopy -i <img> ::/EFI/BOOT/grub.cfg /dev/null 2>/dev/null` \u2014 the one that succeeds is the EFI FAT image\n4. Copy identified image to `$efi_img`\n5. Log: `info \"  Extracted efiboot.img via El Torito boot catalog from boot ISO\"`\n\n**Pre-implementation step:** Before coding, run the Quick commands from the epic spec inside the Podman container to verify `osirrox -extract_boot_images` output on the actual Fedora 43 boot.iso. Capture the exact filenames produced. If `osirrox` (read-only personality) doesn't support `-extract_boot_images`, use `xorriso` instead.\n\nFollow the existing fn-8 stderr capture pattern at `iso/build-iso.sh:967-983` \u2014 `extract_err=\"$(osirrox ... 2>&1)\"` with conditional error display.\n\n### Key context\n\n- `osirrox -extract_boot_images DIR/` extracts El Torito boot images \u2014 xorriso 1.5.6+ (Fedora 43)\n- File naming: typically `eltorito_img1_*.img` (BIOS), `eltorito_img2_*.img` (EFI) \u2014 but NOT guaranteed\n- Use `mcopy` probe for identification (already available \u2014 used in Steps B/C)\n- The `$work_dir` RETURN trap at line ~951 handles cleanup automatically\n- The extracted image is a FAT filesystem containing `/EFI/BOOT/grub.cfg` \u2014 exactly what Steps B-G expect\n\n## Acceptance\n\n- [ ] El Torito extraction attempted when both filesystem extractions fail\n- [ ] EFI image identified by `mcopy` probe (not filename matching)\n- [ ] Extracted EFI image copied to `$efi_img` for Steps B-G\n- [ ] Info log indicates \"El Torito boot catalog\" extraction method\n- [ ] osirrox/xorriso stderr captured and displayed on failure\n- [ ] Temp files in `$work_dir/eltorito/` \u2014 cleaned by existing RETURN trap\n- [ ] Full ISO build succeeds end-to-end in Podman with loop device probe failure\n\n## Done summary\nTBD\n\n## Evidence\n- Commits:\n- Tests:\n- PRs:\n"
+    },
+    {
+      "data": {
+        "assignee": null,
+        "claim_note": "",
+        "claimed_at": null,
+        "created_at": "2026-02-18T13:59:12.336206Z",
+        "depends_on": [
+          "fn-9-extract-efibootimg-via-el-torito-when.1"
+        ],
+        "epic": "fn-9-extract-efibootimg-via-el-torito-when",
+        "id": "fn-9-extract-efibootimg-via-el-torito-when.2",
+        "priority": null,
+        "spec_path": ".flow/tasks/fn-9-extract-efibootimg-via-el-torito-when.2.md",
+        "status": "todo",
+        "title": "Update iso/README.md for El Torito extraction fallback",
+        "updated_at": "2026-02-18T13:59:36.631277Z"
+      },
+      "id": "fn-9-extract-efibootimg-via-el-torito-when.2",
+      "runtime": null,
+      "spec": "# fn-9-extract-efibootimg-via-el-torito-when.2 Update iso/README.md for El Torito extraction fallback\n\n## Description\n\nUpdate `iso/README.md` section \"mkksiso fails with losetup / mkefiboot error\" (~lines 215-244) to describe the three-tier efiboot.img extraction fallback.\n\n**Size:** S\n**Files:** `iso/README.md`\n\n### Approach\n\nUpdate step 1 in the numbered list to explain:\n- Fedora 43 boot.iso may not have `/images/efiboot.img` as an ISO 9660 filesystem entry\n- The script tries: (1) filesystem extraction from output ISO, (2) filesystem extraction from boot ISO, (3) El Torito boot catalog extraction from boot ISO\n- Explain that El Torito stores boot images as hidden partitions, not visible directory entries\n\nFollow the existing documentation style in `iso/README.md` \u2014 concise, factual, with code formatting for commands.\n\n## Acceptance\n\n- [ ] Step 1 updated to describe three-tier extraction fallback\n- [ ] El Torito concept explained briefly (hidden partition vs filesystem entry)\n- [ ] Consistent with surrounding documentation style\n\n## Done summary\nTBD\n\n## Evidence\n- Commits:\n- Tests:\n- PRs:\n"
+    }
+  ]
+}
