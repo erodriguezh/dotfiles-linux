@@ -204,7 +204,7 @@ podman run --privileged --rm \
   /build/iso/build-iso.sh --username=edu --password-hash-file=/tmp/hash.txt
 ```
 
-The ISO is written to `output/surface-linux-F43-YYYYMMDD-x86_64.iso` (~1.5 GB).
+The ISO is written to `output/surface-linux-F43-YYYYMMDD-x86_64.iso` (~1.5 GB). Re-running the build on the same day is safe -- the script automatically removes the previous output before assembling a new ISO.
 
 For development builds with dummy credentials:
 ```bash

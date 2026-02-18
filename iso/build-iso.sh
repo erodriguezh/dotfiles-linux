@@ -1333,6 +1333,13 @@ stage_assemble_iso() {
     iso_date="$(date +%Y%m%d)"
     local output_iso="${OUTPUT_DIR}/surface-linux-F43-${iso_date}-x86_64.iso"
 
+    # Remove any previous build output — mkksiso has no --force/--overwrite
+    # flag and refuses to write to an existing path.
+    if [[ -f "$output_iso" ]]; then
+        info "Removing previous build: $(basename "$output_iso")"
+    fi
+    rm -f "$output_iso" "${output_iso}.sha256"
+
     # mkksiso -a SRC:DEST maps source directories to ISO root paths.
     # If mkksiso doesn't support :DEST syntax, use fallback with temp dirs.
     info "Preparing directories for ISO embedding..."
