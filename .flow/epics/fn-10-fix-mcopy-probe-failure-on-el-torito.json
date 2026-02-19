@@ -1,7 +1,7 @@
 {
   "branch_name": "feature/fn-10-fix-mcopy-probe-failure-on-el-torito",
-  "completion_review_status": "unknown",
-  "completion_reviewed_at": null,
+  "completion_review_status": "ship",
+  "completion_reviewed_at": "2026-02-19T08:02:49.694662Z",
   "created_at": "2026-02-18T19:47:40.817841Z",
   "default_impl": null,
   "default_review": null,
@@ -16,5 +16,5 @@
   "spec_path": ".flow/specs/fn-10-fix-mcopy-probe-failure-on-el-torito.md",
   "status": "open",
   "title": "Fix mcopy probe failure on El Torito-extracted EFI images",
-  "updated_at": "2026-02-18T19:59:06.281413Z"
+  "updated_at": "2026-02-19T08:02:49.695012Z"
 }

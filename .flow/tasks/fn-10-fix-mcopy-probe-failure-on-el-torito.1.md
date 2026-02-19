@@ -76,5 +76,8 @@ Extend the El Torito probe loop at `iso/build-iso.sh:1003-1045`. After the exist
 - [ ] Full ISO build succeeds end-to-end in Podman with loop device probe failure
 
 ## Done summary
-
+Added two-stage partition-aware fallback to the El Torito mcopy probe in patch_efiboot(). When direct mcopy fails on extracted images, Stage 1 uses sfdisk+jq to detect GPT/MBR partition wrappers and dd-extracts the raw FAT ESP, while Stage 2 scans for FAT boot sector signatures at bounded offsets. Includes Containerfile dependency additions (util-linux, file) and README documentation update.
 ## Evidence
+- Commits: dd79041, c67bc70, d3c1fb0, b95943a, e985812
+- Tests: shellcheck -s bash iso/build-iso.sh
+- PRs:
