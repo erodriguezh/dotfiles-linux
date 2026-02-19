@@ -1004,15 +1004,27 @@ patch_efiboot() {
                     # Identify the EFI image: probe ALL regular files for grub.cfg
                     local -a efi_candidates=()
                     local -a candidate_grub_paths=()
-                    local probe_file grub_candidate
+                    local best_mcopy_err="" best_mcopy_err_size=0
+                    local probe_file grub_candidate direct_mcopy_err
                     while IFS= read -r -d '' probe_file; do
+                        local probe_file_size
+                        probe_file_size="$(stat -c '%s' "$probe_file" 2>/dev/null || stat -f '%z' "$probe_file")"
+                        local matched=false
                         for grub_candidate in "::/EFI/BOOT/grub.cfg" "::/EFI/fedora/grub.cfg"; do
-                            if mcopy -o -i "$probe_file" "$grub_candidate" /dev/null 2>/dev/null; then
+                            direct_mcopy_err=""
+                            if direct_mcopy_err="$(mcopy -o -i "$probe_file" "$grub_candidate" /dev/null 2>&1)"; then
                                 efi_candidates+=("$probe_file")
                                 candidate_grub_paths+=("$grub_candidate")
+                                matched=true
                                 break  # one match per file is enough
                             fi
                         done
+                        # Capture stderr from first failure per file for diagnostics
+                        if [[ "$matched" == false && -n "$direct_mcopy_err" ]] && \
+                           (( probe_file_size > best_mcopy_err_size )); then
+                            best_mcopy_err="$direct_mcopy_err"
+                            best_mcopy_err_size="$probe_file_size"
+                        fi
                     done < <(find "$eltorito_dir" -type f -print0)
 
                     # -- Fallback: partition-stripping + FAT signature scan ------
@@ -1031,12 +1043,13 @@ patch_efiboot() {
                             info "    $(basename "$ef"): ${ef_size} bytes — $(file -b "$ef" 2>/dev/null || echo 'unknown type')"
                         done
 
-                        # Collect mcopy stderr for diagnostics on hard-fail
-                        local best_mcopy_err="" best_mcopy_err_size=0
-
-                        # --- Stage 1: Partition table detection via sfdisk ---
+                        # --- Stage 1: Partition table detection via sfdisk + jq ---
                         local stage1_tried=false
-                        if command -v sfdisk >/dev/null 2>&1; then
+                        if ! command -v sfdisk >/dev/null 2>&1; then
+                            warn "  sfdisk not available — skipping partition table detection (install util-linux for full fallback)"
+                        elif ! command -v jq >/dev/null 2>&1; then
+                            warn "  jq not available — skipping partition table detection (install jq for full fallback)"
+                        else
                             local pf pf_size sfdisk_json
                             while IFS= read -r -d '' pf; do
                                 pf_size="$(stat -c '%s' "$pf" 2>/dev/null || stat -f '%z' "$pf")"
@@ -1106,8 +1119,6 @@ patch_efiboot() {
                                     fi
                                 done
                             done < <(find "$eltorito_dir" -type f -print0)
-                        else
-                            warn "  sfdisk not available — skipping partition table detection (install util-linux for full fallback)"
                         fi
 
                         # --- Stage 2: FAT signature scan (if Stage 1 found nothing) ---
@@ -1121,7 +1132,7 @@ patch_efiboot() {
                                 scan_limit=$(( ff_size < 4194304 ? ff_size : 4194304 ))
                                 fat_found=""
 
-                                for (( offset = 0; offset < scan_limit; offset += 512 )); do
+                                for (( offset = 0; offset + 512 <= scan_limit; offset += 512 )); do
                                     # Read byte 0 (jump instruction) and bytes 510-511 (boot signature)
                                     local jump_byte sig_bytes
                                     jump_byte="$(od -A n -t x1 -j "$offset" -N 1 "$ff" 2>/dev/null | tr -d ' ')"
@@ -1187,6 +1198,8 @@ patch_efiboot() {
                             fi
                             if ! command -v sfdisk >/dev/null 2>&1; then
                                 error "  Note: sfdisk not found — install util-linux for partition table detection"
+                            elif ! command -v jq >/dev/null 2>&1; then
+                                error "  Note: jq not found — install jq for partition table detection"
                             fi
                             return 1
                         fi
