@@ -1009,7 +1009,7 @@ patch_efiboot() {
                     while IFS= read -r -d '' probe_file; do
                         local probe_file_size
                         probe_file_size="$(stat -c '%s' "$probe_file" 2>/dev/null || stat -f '%z' "$probe_file")"
-                        local matched=false
+                        local matched=false first_mcopy_err=""
                         for grub_candidate in "::/EFI/BOOT/grub.cfg" "::/EFI/fedora/grub.cfg"; do
                             direct_mcopy_err=""
                             if direct_mcopy_err="$(mcopy -o -i "$probe_file" "$grub_candidate" /dev/null 2>&1)"; then
@@ -1017,12 +1017,15 @@ patch_efiboot() {
                                 candidate_grub_paths+=("$grub_candidate")
                                 matched=true
                                 break  # one match per file is enough
+                            else
+                                # Keep only the first failure's stderr per file
+                                [[ -z "$first_mcopy_err" && -n "$direct_mcopy_err" ]] && first_mcopy_err="$direct_mcopy_err"
                             fi
                         done
-                        # Capture stderr from first failure per file for diagnostics
-                        if [[ "$matched" == false && -n "$direct_mcopy_err" ]] && \
+                        # Track best mcopy error across files (largest file wins)
+                        if [[ "$matched" == false && -n "$first_mcopy_err" ]] && \
                            (( probe_file_size > best_mcopy_err_size )); then
-                            best_mcopy_err="$direct_mcopy_err"
+                            best_mcopy_err="$first_mcopy_err"
                             best_mcopy_err_size="$probe_file_size"
                         fi
                     done < <(find "$eltorito_dir" -type f -print0)
@@ -1044,7 +1047,7 @@ patch_efiboot() {
                         done
 
                         # --- Stage 1: Partition table detection via sfdisk + jq ---
-                        local stage1_tried=false
+                        local stage1_tried=""
                         if ! command -v sfdisk >/dev/null 2>&1; then
                             warn "  sfdisk not available — skipping partition table detection (install util-linux for full fallback)"
                         elif ! command -v jq >/dev/null 2>&1; then
@@ -1058,7 +1061,7 @@ patch_efiboot() {
 
                                 # Try to parse partition table
                                 sfdisk_json="$(sfdisk --json "$pf" 2>/dev/null)" || continue
-                                stage1_tried=true
+                                stage1_tried=yes
 
                                 # Find EFI System Partition — match type case-insensitively:
                                 #   GPT GUID C12A7328-F81F-11D2-BA4B-00A0C93EC93B
