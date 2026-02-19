@@ -1,0 +1,14 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-02-18T19:48:58.385645Z",
+  "depends_on": [],
+  "epic": "fn-10-fix-mcopy-probe-failure-on-el-torito",
+  "id": "fn-10-fix-mcopy-probe-failure-on-el-torito.1",
+  "priority": null,
+  "spec_path": ".flow/tasks/fn-10-fix-mcopy-probe-failure-on-el-torito.1.md",
+  "status": "todo",
+  "title": "Add partition-aware El Torito probe with dd extraction and README update",
+  "updated_at": "2026-02-18T19:49:25.933233Z"
+}

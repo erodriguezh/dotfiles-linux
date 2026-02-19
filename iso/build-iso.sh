@@ -1004,30 +1004,208 @@ patch_efiboot() {
                     # Identify the EFI image: probe ALL regular files for grub.cfg
                     local -a efi_candidates=()
                     local -a candidate_grub_paths=()
-                    local probe_file grub_candidate
+                    local best_mcopy_err="" best_mcopy_err_size=0
+                    local probe_file grub_candidate direct_mcopy_err
                     while IFS= read -r -d '' probe_file; do
+                        local probe_file_size
+                        probe_file_size="$(stat -c '%s' "$probe_file" 2>/dev/null || stat -f '%z' "$probe_file")"
+                        local matched=false first_mcopy_err=""
                         for grub_candidate in "::/EFI/BOOT/grub.cfg" "::/EFI/fedora/grub.cfg"; do
-                            if mcopy -o -i "$probe_file" "$grub_candidate" /dev/null 2>/dev/null; then
+                            direct_mcopy_err=""
+                            if direct_mcopy_err="$(mcopy -o -i "$probe_file" "$grub_candidate" /dev/null 2>&1)"; then
                                 efi_candidates+=("$probe_file")
                                 candidate_grub_paths+=("$grub_candidate")
+                                matched=true
                                 break  # one match per file is enough
+                            else
+                                # Keep only the first failure's stderr per file
+                                [[ -z "$first_mcopy_err" && -n "$direct_mcopy_err" ]] && first_mcopy_err="$direct_mcopy_err"
                             fi
                         done
+                        # Track best mcopy error across files (largest file wins)
+                        if [[ "$matched" == false && -n "$first_mcopy_err" ]] && \
+                           (( probe_file_size > best_mcopy_err_size )); then
+                            best_mcopy_err="$first_mcopy_err"
+                            best_mcopy_err_size="$probe_file_size"
+                        fi
                     done < <(find "$eltorito_dir" -type f -print0)
 
+                    # -- Fallback: partition-stripping + FAT signature scan ------
+                    # When direct mcopy fails on all extracted files, try:
+                    #   Stage 1: detect partition table wrappers (sfdisk + dd)
+                    #   Stage 2: scan for FAT boot sector signature at small offsets
                     if [[ ${#efi_candidates[@]} -eq 0 ]]; then
-                        error "El Torito extraction produced no EFI boot image (no files contain grub.cfg)"
-                        error "  Extracted files:"
+                        info "  Direct mcopy probe found no grub.cfg — trying partition-aware fallback"
+
+                        # Log file(1) diagnostic for each extracted image
                         local ef
-                        local has_files=false
                         for ef in "$eltorito_dir"/*; do
-                            if [[ -e "$ef" ]]; then
-                                has_files=true
-                                error "    $(basename "$ef") ($(stat -c '%s' "$ef" 2>/dev/null || stat -f '%z' "$ef") bytes)"
-                            fi
+                            [[ -e "$ef" ]] || continue
+                            local ef_size
+                            ef_size="$(stat -c '%s' "$ef" 2>/dev/null || stat -f '%z' "$ef")"
+                            info "    $(basename "$ef"): ${ef_size} bytes — $(file -b "$ef" 2>/dev/null || echo 'unknown type')"
                         done
-                        [[ "$has_files" == false ]] && error "    (none — extraction directory is empty)"
-                        return 1
+
+                        # --- Stage 1: Partition table detection via sfdisk + jq ---
+                        local stage1_tried=""
+                        if ! command -v sfdisk >/dev/null 2>&1; then
+                            warn "  sfdisk not available — skipping partition table detection (install util-linux for full fallback)"
+                        elif ! command -v jq >/dev/null 2>&1; then
+                            warn "  jq not available — skipping partition table detection (install jq for full fallback)"
+                        else
+                            local pf pf_size sfdisk_json
+                            while IFS= read -r -d '' pf; do
+                                pf_size="$(stat -c '%s' "$pf" 2>/dev/null || stat -f '%z' "$pf")"
+                                # Only consider files >1 MB
+                                (( pf_size > 1048576 )) || continue
+
+                                # Try to parse partition table
+                                sfdisk_json="$(sfdisk --json "$pf" 2>/dev/null)" || continue
+                                stage1_tried=yes
+
+                                # Find EFI System Partition — match type case-insensitively:
+                                #   GPT GUID C12A7328-F81F-11D2-BA4B-00A0C93EC93B
+                                #   MBR type ef / 0xef
+                                #   gdisk-style EF00
+                                #   label "EFI System"
+                                local sectorsize esp_start esp_size
+                                sectorsize="$(printf '%s' "$sfdisk_json" | jq -r '.partitiontable.sectorsize // 512')"
+
+                                local esp_info
+                                esp_info="$(printf '%s' "$sfdisk_json" | jq -r '
+                                    .partitiontable.partitions[]
+                                    | select(
+                                        (.type // "" | test("^[Cc]12[Aa]7328-[Ff]81[Ff]-11[Dd]2-[Bb][Aa]4[Bb]-00[Aa]0[Cc]93[Ee][Cc]93[Bb]$"))
+                                        or (.type // "" | test("^0?[Xx]?[Ee][Ff]$"))
+                                        or (.type // "" | test("^[Ee][Ff]00$"))
+                                        or (.name // "" | test("EFI System"; "i"))
+                                    )
+                                    | "\(.start) \(.size)"
+                                ' 2>/dev/null)" || continue
+
+                                [[ -n "$esp_info" ]] || continue
+
+                                # Use only the first matching partition
+                                read -r esp_start esp_size <<< "$(head -n 1 <<< "$esp_info")"
+
+                                # Validate offset fits within file
+                                local esp_end_bytes
+                                esp_end_bytes=$(( (esp_start + esp_size) * sectorsize ))
+                                if (( esp_end_bytes > pf_size )); then
+                                    warn "    $(basename "$pf"): ESP partition exceeds file size ($(( esp_end_bytes )) > ${pf_size}), skipping"
+                                    continue
+                                fi
+
+                                # Extract raw FAT partition with dd
+                                local stripped
+                                stripped="${work_dir}/stripped-$(basename "$pf").fat.img"
+                                info "    $(basename "$pf"): extracting ESP at sector ${esp_start} (${esp_size} sectors, ${sectorsize}B/sector)"
+                                if ! dd if="$pf" of="$stripped" bs="$sectorsize" skip="$esp_start" count="$esp_size" 2>/dev/null; then
+                                    warn "    dd extraction failed for $(basename "$pf")"
+                                    continue
+                                fi
+
+                                # Probe stripped image with mcopy
+                                local sg mcopy_err
+                                for sg in "::/EFI/BOOT/grub.cfg" "::/EFI/fedora/grub.cfg"; do
+                                    mcopy_err=""
+                                    if mcopy_err="$(mcopy -o -i "$stripped" "$sg" /dev/null 2>&1)"; then
+                                        efi_candidates+=("$stripped")
+                                        candidate_grub_paths+=("$sg")
+                                        info "    $(basename "$pf"): found grub.cfg at $sg in stripped ESP"
+                                        break
+                                    else
+                                        if [[ -n "$mcopy_err" ]] && (( pf_size > best_mcopy_err_size )); then
+                                            best_mcopy_err="$mcopy_err"
+                                            best_mcopy_err_size="$pf_size"
+                                        fi
+                                    fi
+                                done
+                            done < <(find "$eltorito_dir" -type f -print0)
+                        fi
+
+                        # --- Stage 2: FAT signature scan (if Stage 1 found nothing) ---
+                        if [[ ${#efi_candidates[@]} -eq 0 ]]; then
+                            local ff ff_size scan_limit offset fat_found
+                            while IFS= read -r -d '' ff; do
+                                ff_size="$(stat -c '%s' "$ff" 2>/dev/null || stat -f '%z' "$ff")"
+                                (( ff_size > 1048576 )) || continue
+
+                                # Scan first 4 MiB in 512-byte steps
+                                scan_limit=$(( ff_size < 4194304 ? ff_size : 4194304 ))
+                                fat_found=""
+
+                                for (( offset = 0; offset + 512 <= scan_limit; offset += 512 )); do
+                                    # Read byte 0 (jump instruction) and bytes 510-511 (boot signature)
+                                    local jump_byte sig_bytes
+                                    jump_byte="$(od -A n -t x1 -j "$offset" -N 1 "$ff" 2>/dev/null | tr -d ' ')"
+                                    sig_bytes="$(od -A n -t x1 -j $(( offset + 510 )) -N 2 "$ff" 2>/dev/null | tr -d ' ')"
+
+                                    # FAT boot sector: byte 0 is 0xEB or 0xE9, bytes 510-511 are 0x55 0xAA
+                                    if [[ "$jump_byte" == "eb" || "$jump_byte" == "e9" ]] && \
+                                       [[ "$sig_bytes" == "55aa" ]]; then
+                                        fat_found="$offset"
+                                        break
+                                    fi
+                                done
+
+                                [[ -n "$fat_found" ]] || continue
+                                info "    $(basename "$ff"): FAT signature found at offset ${fat_found}"
+
+                                # Extract from offset to end of file
+                                local fat_stripped
+                                fat_stripped="${work_dir}/fatscan-$(basename "$ff").fat.img"
+                                local remaining_bytes
+                                remaining_bytes=$(( ff_size - fat_found ))
+                                if ! dd if="$ff" of="$fat_stripped" bs=1 skip="$fat_found" count="$remaining_bytes" 2>/dev/null; then
+                                    warn "    dd extraction failed for $(basename "$ff") at offset ${fat_found}"
+                                    continue
+                                fi
+
+                                # Probe stripped image with mcopy
+                                local sg2 mcopy_err2
+                                for sg2 in "::/EFI/BOOT/grub.cfg" "::/EFI/fedora/grub.cfg"; do
+                                    mcopy_err2=""
+                                    if mcopy_err2="$(mcopy -o -i "$fat_stripped" "$sg2" /dev/null 2>&1)"; then
+                                        efi_candidates+=("$fat_stripped")
+                                        candidate_grub_paths+=("$sg2")
+                                        info "    $(basename "$ff"): found grub.cfg at $sg2 via FAT signature scan (offset ${fat_found})"
+                                        break
+                                    else
+                                        if [[ -n "$mcopy_err2" ]] && (( ff_size > best_mcopy_err_size )); then
+                                            best_mcopy_err="$mcopy_err2"
+                                            best_mcopy_err_size="$ff_size"
+                                        fi
+                                    fi
+                                done
+                            done < <(find "$eltorito_dir" -type f -print0)
+                        fi
+
+                        # If still no candidates after both stages, hard-fail with diagnostics
+                        if [[ ${#efi_candidates[@]} -eq 0 ]]; then
+                            error "El Torito extraction produced no EFI boot image (no files contain grub.cfg)"
+                            error "  Tried: direct mcopy, partition-table stripping${stage1_tried:+ (sfdisk)}, FAT signature scan"
+                            error "  Extracted files:"
+                            local ef2
+                            local has_files=false
+                            for ef2 in "$eltorito_dir"/*; do
+                                if [[ -e "$ef2" ]]; then
+                                    has_files=true
+                                    error "    $(basename "$ef2") ($(stat -c '%s' "$ef2" 2>/dev/null || stat -f '%z' "$ef2") bytes)"
+                                fi
+                            done
+                            [[ "$has_files" == false ]] && error "    (none — extraction directory is empty)"
+                            if [[ -n "$best_mcopy_err" ]]; then
+                                error "  Most informative mcopy error (from largest candidate):"
+                                error "    $best_mcopy_err"
+                            fi
+                            if ! command -v sfdisk >/dev/null 2>&1; then
+                                error "  Note: sfdisk not found — install util-linux for partition table detection"
+                            elif ! command -v jq >/dev/null 2>&1; then
+                                error "  Note: jq not found — install jq for partition table detection"
+                            fi
+                            return 1
+                        fi
                     fi
 
                     if [[ ${#efi_candidates[@]} -gt 1 ]]; then
@@ -1042,6 +1220,20 @@ patch_efiboot() {
                     # Exactly one candidate — copy to efi_img
                     cp "${efi_candidates[0]}" "$efi_img"
                     info "  EFI image identified: $(basename "${efi_candidates[0]}") (grub.cfg at ${candidate_grub_paths[0]})"
+
+                    # Sanity check: the result must be a clean raw FAT image
+                    local efi_file_type
+                    efi_file_type="$(file -b "$efi_img" 2>/dev/null || echo '')"
+                    if [[ "$efi_file_type" != *FAT* ]]; then
+                        error "Post-selection sanity check failed: efi_img is not a FAT image"
+                        error "  file -b: $efi_file_type"
+                        return 1
+                    fi
+                    # Verify mcopy can read grub.cfg without offset tricks
+                    if ! mcopy -o -i "$efi_img" "${candidate_grub_paths[0]}" /dev/null 2>/dev/null; then
+                        error "Post-selection sanity check failed: mcopy cannot read ${candidate_grub_paths[0]} from efi_img"
+                        return 1
+                    fi
                 fi
             else
                 info "  Extracted efiboot.img from boot ISO filesystem"
